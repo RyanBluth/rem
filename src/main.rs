@@ -7,18 +7,11 @@ use std::vec::Vec;
 use std::path::Path;
 use std::ptr;
 use std::net::{TcpListener, TcpStream};
-
-
-struct CacheItem{
-    value: *mut u8,
-    size: i32
-}
-
+use std::thread;
 
 struct CacheOperation{
     commands: Vec<char>,
-    key: String,
-    value: Vec<u8>
+    value: String
 }
 
 impl CacheOperation{
@@ -26,26 +19,17 @@ impl CacheOperation{
     fn new_from_string(cache_op_str: &String) -> CacheOperation {
         let mut cache_op = CacheOperation{
             commands:Vec::new(),
-            key:String::new(),
-            value:Vec::new()
+            value:String::new()
         };
         let mut idx = 0;
-        let mut chars_iter = cache_op_str.chars();
-        let mut parsed_cmds = false;
+        let chars_iter = cache_op_str.chars();
         for c in chars_iter {
             idx += 1;
-            let is_tok = c == '$' || c == ':';
             if c == '$'{
-                parsed_cmds = true;
-            } else if c == ':'{
-                cache_op.value = String::from(&cache_op_str[idx..]).into_bytes();
+                cache_op.value = String::from(&cache_op_str[idx..]);
                 break;
             }
-            if parsed_cmds && !is_tok{
-                cache_op.key.push(c);
-            }else if !is_tok{
-               cache_op.commands.push(c);
-            }
+            cache_op.commands.push(c);
         }
         return cache_op;
     }
@@ -69,25 +53,86 @@ impl Cache{
         self.map_internal.insert(key, val);
     }
 
+    fn read_item( &self, key:String ) -> Option<&Vec<u8>>{
+        //println!("Reading value from cache: key:{}, value:{:?}", key, self.map_internal.get(key));
+        return self.map_internal.get(&key);
+    }
+
 }
 
 
-fn handle_client(stream: &mut TcpStream, cache:&mut Cache) {
-    let mut buf: Vec<u8> = Vec::new();
-    stream.read_to_end( &mut buf );
+fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
+
+    stream.set_nodelay(true);
+    println!("Before Read");
+
+    io::stdout().flush().unwrap();
+
+    let mut buf_arr:[u8; 64] = [0; 64];
+    stream.read(&mut buf_arr);
+
+    let mut size_str = String::new();
+    let mut size_idx:usize = 0;
+    for i in 0..64{
+        size_idx += 1;
+        if buf_arr[i] == '|' as u8{
+            break;
+        }
+        size_str.push(buf_arr[i as usize] as char);
+    }
+
+    println!("Size {}", size_str);
+    io::stdout().flush().unwrap();
+
+    let upper_idx:usize = size_str.parse::<i32>().unwrap() as usize;
+    let msg_buf = buf_arr;
+    let mut buf_temp: Vec<u8> = msg_buf.to_vec();
+    let mut buf: Vec<u8> = buf_temp.drain(size_idx..upper_idx).collect();
+
+    println!("buf {:?}", buf);
+    io::stdout().flush().unwrap();
+
+    stream.flush().unwrap();
+
     let buf_str:String = String::from_utf8(buf).unwrap();
     if buf_str.len() > 0 {
-        let mut cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
-        print!("cmds = {:?}, key = {}, value {:?}", cache_op.commands, cache_op.key, cache_op.value );
+
+        let cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
+
+        print!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
         io::stdout().flush().unwrap();
+
+        if cache_op.commands.len() > 0 {
+
+            let prim_cmd:char = cache_op.commands[0];
+
+            match prim_cmd{
+                'W' => write_stream_str_to_cache(cache_op.value, &mut cache),
+                'R' => read_value_from_cache( cache_op.value, &mut cache, &mut stream),
+                _ => panic!("Invalid cache command")
+            }
+        }
     }else{
         panic!("Empty cache operation");
     }
 }
 
 
-fn read_value_from_cache( key:&String, cache:&Cache){
+fn read_value_from_cache( key:String, cache:&Cache, stream: &mut TcpStream){
+    let cache_opt = cache.read_item(String::from("a"));
 
+    match cache_opt{
+        Some(val)=> {
+            println!("Writing to stream {:?}", val);
+            io::stdout().flush().unwrap();
+            stream.write(&val[0..val.len()]);
+            stream.flush();
+        },
+        None =>{
+            stream.write(&[65,65,65,65]);
+            stream.flush();
+        }
+    }
 }
 
 fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
@@ -95,7 +140,6 @@ fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
     let mut val:String = String::from("");
     let mut idx = 0;
     let mut chars_iter = stream_str.chars();
-    chars_iter.next(); // Consume command
     for c in chars_iter {
         idx += 1;
         if c == ':'{
@@ -117,10 +161,16 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                handle_client(&mut stream, &mut cache);
+                //thread::spawn(||{
+                println!("Connection");
+                io::stdout().flush().unwrap();
+                loop{
+                    handle_client(&mut stream, &mut cache);
+                }
+                //});
             }
-                Err(e) => { /* connection failed */ }
-            }
+            Err(e) => { /* connection failed */ }
+        }
 
     }
 
