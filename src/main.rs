@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std::io;
 use std::fs::File;
 use std::collections::HashMap;
 use std::string::String;
@@ -13,24 +14,46 @@ struct CacheItem{
     size: i32
 }
 
-impl CacheItem{
-    fn default() -> CacheItem {
-        return CacheItem{
-            value: ptr::null_mut(),
-            size: 0,
-        }
-    }
 
-    fn new(val: * mut u8, size: i32) -> CacheItem {
-        return CacheItem{
-            value: val,
-            size: size,
+struct CacheOperation{
+    commands: Vec<char>,
+    key: String,
+    value: Vec<u8>
+}
+
+impl CacheOperation{
+
+    fn new_from_string(cache_op_str: &String) -> CacheOperation {
+        let mut cache_op = CacheOperation{
+            commands:Vec::new(),
+            key:String::new(),
+            value:Vec::new()
+        };
+        let mut idx = 0;
+        let mut chars_iter = cache_op_str.chars();
+        let mut parsed_cmds = false;
+        for c in chars_iter {
+            idx += 1;
+            let is_tok = c == '$' || c == ':';
+            if c == '$'{
+                parsed_cmds = true;
+            } else if c == ':'{
+                cache_op.value = String::from(&cache_op_str[idx..]).into_bytes();
+                break;
+            }
+            if parsed_cmds && !is_tok{
+                cache_op.key.push(c);
+            }else if !is_tok{
+               cache_op.commands.push(c);
+            }
         }
+        return cache_op;
     }
 }
 
+
 struct Cache{
-    map_internal : HashMap<String,CacheItem>
+    map_internal : HashMap<String, Vec<u8>>
 }
 
 impl Cache{
@@ -41,8 +64,9 @@ impl Cache{
         }
     }
 
-    fn cache_item( &mut self, key: String, val: * mut u8, size: i32 ){
-        self.map_internal.insert(key, CacheItem::new(val, size));
+    fn cache_item( &mut self, key: String, val: Vec<u8>){
+        println!("Writing to cache: key={:?} val={:?}", key, val);
+        self.map_internal.insert(key, val);
     }
 
 }
@@ -52,15 +76,27 @@ fn handle_client(stream: &mut TcpStream, cache:&mut Cache) {
     let mut buf: Vec<u8> = Vec::new();
     stream.read_to_end( &mut buf );
     let buf_str:String = String::from_utf8(buf).unwrap();
-    write_stream_str_to_cache(buf_str, cache);
+    if buf_str.len() > 0 {
+        let mut cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
+        print!("cmds = {:?}, key = {}, value {:?}", cache_op.commands, cache_op.key, cache_op.value );
+        io::stdout().flush().unwrap();
+    }else{
+        panic!("Empty cache operation");
+    }
 }
 
+
+fn read_value_from_cache( key:&String, cache:&Cache){
+
+}
 
 fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
     let mut key:String = String::from("");
     let mut val:String = String::from("");
     let mut idx = 0;
-    for c in stream_str.chars(){
+    let mut chars_iter = stream_str.chars();
+    chars_iter.next(); // Consume command
+    for c in chars_iter {
         idx += 1;
         if c == ':'{
             val = String::from(&stream_str[idx..]);
@@ -68,7 +104,8 @@ fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
         }
         key.push(c);
     }
-    println!("Writing to cache: key={:?} val={:?}", key, val);
+    let bytes = val.into_bytes();
+    cache.cache_item( key, bytes);
 }
 
 fn main() {
