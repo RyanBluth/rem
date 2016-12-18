@@ -86,6 +86,19 @@ impl Cache{
         }
         return res;
     }
+
+    fn delete_item( &mut self, key:String ){
+        if self.map_internal.contains_key( &key ){
+            self.map_internal.remove( &key );
+        }
+        let path = format!("_cache/{}", key);
+        if Path::new(&path).exists(){
+            match fs::remove_file(path){
+                Ok(x)  => x,
+                Err(e) => error!("Failed to delete file for key: {}", key)
+            }
+        }
+    }
 }
 
 
@@ -124,6 +137,7 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
             match prim_cmd{
                 'W' => write_stream_str_to_cache(cache_op.value, cache),
                 'R' => read_value_from_cache( cache_op.value, cache, &mut stream),
+                'D' => delete_value_from_cache( cache_op.value, cache ),
                 _ => error!("Invalid cache command {:?}", prim_cmd)
             }
         }
@@ -168,6 +182,11 @@ fn write_stream_str_to_cache(stream_str:String, cache_mtx:&Arc<Mutex<Cache>>){
     cache.cache_item( key, bytes);
 }
 
+fn delete_value_from_cache( key: String, cache_mtx:&Arc<Mutex<Cache>>){
+    let mut cache = cache_mtx.lock().unwrap();
+    cache.delete_item( key );
+}
+
 fn main() {
 
     env_logger::init().unwrap();
@@ -192,7 +211,7 @@ fn main() {
                     }
                 });
             }
-            Err(e) => { /* connection failed */ }
+            Err(e) => { error!{"Incoming connection failed"} }
         }
     }
 }
