@@ -10,6 +10,9 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::result;
 use std::fs;
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::channel;
+
 
 struct CacheOperation{
     commands: Vec<char>,
@@ -82,7 +85,7 @@ impl Cache{
 }
 
 
-fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
+fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
 
     stream.set_nodelay(true);
     println!("Before Read");
@@ -126,8 +129,8 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
         if cache_op.commands.len() > 0 {
             let prim_cmd:char = cache_op.commands[0];
             match prim_cmd{
-                'W' => write_stream_str_to_cache(cache_op.value, &mut cache),
-                'R' => read_value_from_cache( cache_op.value, &mut cache, &mut stream),
+                'W' => write_stream_str_to_cache(cache_op.value, cache),
+                'R' => read_value_from_cache( cache_op.value, cache, &mut stream),
                 _ => panic!("Invalid cache command")
             }
         }
@@ -137,7 +140,8 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
 }
 
 
-fn read_value_from_cache<'a>( key:String, cache:&Cache, stream: &mut TcpStream){
+fn read_value_from_cache<'a>( key:String, cache_mtx:&Arc<Mutex<Cache>>, stream: &mut TcpStream){
+    let cache = cache_mtx.lock().unwrap();
     let cache_opt:Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt{
         Some(boxed_val)=> {
@@ -154,7 +158,7 @@ fn read_value_from_cache<'a>( key:String, cache:&Cache, stream: &mut TcpStream){
     }
 }
 
-fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
+fn write_stream_str_to_cache(stream_str:String, cache_mtx:&Arc<Mutex<Cache>>){
     let mut key:String = String::from("");
     let mut val:String = String::from("");
     let mut idx = 0;
@@ -168,25 +172,29 @@ fn write_stream_str_to_cache(stream_str:String, cache:&mut Cache){
         key.push(c);
     }
     let bytes = val.into_bytes();
+    let mut cache = cache_mtx.lock().unwrap();
     cache.cache_item( key, bytes);
 }
 
 fn main() {
 
     let listener:TcpListener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    let mut cache:Cache = Cache::new();
+    //let mut cache:Cache = Cache::new();
+
+    let cache = Arc::new(Mutex::new(Cache::new()));
 
     // accept connections and process them, spawning a new thread for each one
     for stream in listener.incoming() {
+        let cache:Arc<Mutex<Cache>> = cache.clone();
         match stream {
             Ok(mut stream) => {
-                //thread::spawn(||{
-                println!("Connection");
-                io::stdout().flush().unwrap();
-                loop{
-                    handle_client(&mut stream, &mut cache);
-                }
-                //});
+                thread::spawn( move ||{
+                    println!("Connection");
+                    io::stdout().flush().unwrap();
+                    loop{
+                        handle_client(&mut stream, &cache);
+                    }
+                });
             }
             Err(e) => { /* connection failed */ }
         }
