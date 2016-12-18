@@ -1,3 +1,7 @@
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use std::io::prelude::*;
 use std::io;
 use std::fs::File;
@@ -11,7 +15,7 @@ use std::thread;
 use std::result;
 use std::fs;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::channel;
+use std::env;
 
 
 struct CacheOperation{
@@ -54,7 +58,7 @@ impl Cache{
     }
 
     fn cache_item( &mut self, key: String, val: Vec<u8>){
-        println!("Writing to cache: key={:?} val={:?}", key, val);
+        debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
         let mut f:File = File::create(format!("_cache/{}", key)).unwrap();
         f.write(&val.as_slice());
@@ -66,11 +70,11 @@ impl Cache{
         let mut res: Option<Box<Vec<u8>>> = None;
         if self.map_internal.contains_key(&key) {
             let res_opt = self.map_internal.get(&key);
-            match res_opt{
+            match res_opt {
                 Some(vec_ref) => res = Some(Box::new(vec_ref.clone())),
                 None => res = None
             }
-        }else{
+        } else {
             let mut buf: Vec<u8> = Vec::new();
             let mut f_res = match File::open(&key) {
                 Err(why) => res = None,
@@ -86,12 +90,7 @@ impl Cache{
 
 
 fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
-
     stream.set_nodelay(true);
-    println!("Before Read");
-
-    io::stdout().flush().unwrap();
-
     let mut buf_arr:[u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
 
@@ -105,16 +104,11 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
         size_str.push(buf_arr[i as usize] as char);
     }
 
-    println!("Size {}", size_str);
-    io::stdout().flush().unwrap();
 
     let upper_idx:usize = size_str.parse::<i32>().unwrap() as usize;
     let msg_buf = buf_arr;
     let mut buf_temp: Vec<u8> = msg_buf.to_vec();
     let mut buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
-
-    println!("buf {:?}", buf);
-    io::stdout().flush().unwrap();
 
     stream.flush().unwrap();
 
@@ -123,15 +117,14 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
 
         let cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
 
-        println!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
-        io::stdout().flush().unwrap();
+        debug!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
 
         if cache_op.commands.len() > 0 {
             let prim_cmd:char = cache_op.commands[0];
             match prim_cmd{
                 'W' => write_stream_str_to_cache(cache_op.value, cache),
                 'R' => read_value_from_cache( cache_op.value, cache, &mut stream),
-                _ => panic!("Invalid cache command")
+                _ => error!("Invalid cache command {:?}", prim_cmd)
             }
         }
     }else{
@@ -146,8 +139,7 @@ fn read_value_from_cache<'a>( key:String, cache_mtx:&Arc<Mutex<Cache>>, stream: 
     match cache_opt{
         Some(boxed_val)=> {
             let val = *boxed_val;
-            println!("Writing to stream {:?}", val);
-            io::stdout().flush().unwrap();
+            debug!("Writing to stream {:?}", val);
             stream.write(&val[0..val.len()]);
             stream.flush();
         },
@@ -178,6 +170,10 @@ fn write_stream_str_to_cache(stream_str:String, cache_mtx:&Arc<Mutex<Cache>>){
 
 fn main() {
 
+    env_logger::init().unwrap();
+
+    info!("Starting on port 8080");
+
     let listener:TcpListener = TcpListener::bind("127.0.0.1:8080").unwrap();
     //let mut cache:Cache = Cache::new();
 
@@ -189,7 +185,7 @@ fn main() {
         match stream {
             Ok(mut stream) => {
                 thread::spawn( move ||{
-                    println!("Connection");
+                    info!("Incoming connection: {:?}", stream.peer_addr());
                     io::stdout().flush().unwrap();
                     loop{
                         handle_client(&mut stream, &cache);
@@ -198,40 +194,6 @@ fn main() {
             }
             Err(e) => { /* connection failed */ }
         }
-
     }
-
-    let file_res = make_cache();
-    if file_res.is_err() {
-        panic!("Could not create cache file");
-    }
-    let mut cache_file = file_res.unwrap();
-    let write_res = cache_file.write_all(b"test");
-    if write_res.is_err() {
-        panic!("Could not write to cache");
-    }
-    read_index(cache_file);
-}
-
-
-fn make_cache() -> Result<File, std::io::Error>{
-    return File::create("cache.txt");
-}
-
-fn read_index(mut cache_file: File) -> HashMap<String, i32> {
-    let path = Path::new("cache.txt");
-    let mut file = match File::open(&path) {
-        // The `description` method of `io::Error` returns a string that
-        // describes the error
-        Err(why) => panic!("couldn't open"),
-        Ok(file) => file,
-    };
-    let mut buf:Vec<u8> = Vec::new();
-    file.read_to_end(&mut buf);
-    for char in buf {
-        println!("{}", char);
-    }
-
-    return HashMap::new();
 }
 
