@@ -8,6 +8,8 @@ use std::path::Path;
 use std::ptr;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::result;
+use std::fs;
 
 struct CacheOperation{
     commands: Vec<char>,
@@ -50,14 +52,33 @@ impl Cache{
 
     fn cache_item( &mut self, key: String, val: Vec<u8>){
         println!("Writing to cache: key={:?} val={:?}", key, val);
+        fs::create_dir("_cache");
+        let mut f:File = File::create(format!("_cache/{}", key)).unwrap();
+        f.write(&val.as_slice());
+        f.flush();
         self.map_internal.insert(key, val);
     }
 
-    fn read_item( &self, key:String ) -> Option<&Vec<u8>>{
-        //println!("Reading value from cache: key:{}, value:{:?}", key, self.map_internal.get(key));
-        return self.map_internal.get(&key);
+    fn read_item( &self, key:String ) -> Option<Box<Vec<u8>>> {
+        let mut res: Option<Box<Vec<u8>>> = None;
+        if self.map_internal.contains_key(&key) {
+            let res_opt = self.map_internal.get(&key);
+            match res_opt{
+                Some(vec_ref) => res = Some(Box::new(vec_ref.clone())),
+                None => res = None
+            }
+        }else{
+            let mut buf: Vec<u8> = Vec::new();
+            let mut f_res = match File::open(&key) {
+                Err(why) => res = None,
+                Ok(mut file) => {
+                    file.read_to_end(&mut buf);
+                    res = Some(Box::new(buf));
+                }
+            };
+        }
+        return res;
     }
-
 }
 
 
@@ -72,9 +93,9 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
     stream.read(&mut buf_arr);
 
     let mut size_str = String::new();
-    let mut size_idx:usize = 0;
+    let mut buf_size:usize = 0;
     for i in 0..64{
-        size_idx += 1;
+        buf_size += 1;
         if buf_arr[i] == '|' as u8{
             break;
         }
@@ -87,7 +108,7 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
     let upper_idx:usize = size_str.parse::<i32>().unwrap() as usize;
     let msg_buf = buf_arr;
     let mut buf_temp: Vec<u8> = msg_buf.to_vec();
-    let mut buf: Vec<u8> = buf_temp.drain(size_idx..upper_idx).collect();
+    let mut buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
 
     println!("buf {:?}", buf);
     io::stdout().flush().unwrap();
@@ -99,13 +120,11 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
 
         let cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
 
-        print!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
+        println!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
         io::stdout().flush().unwrap();
 
         if cache_op.commands.len() > 0 {
-
             let prim_cmd:char = cache_op.commands[0];
-
             match prim_cmd{
                 'W' => write_stream_str_to_cache(cache_op.value, &mut cache),
                 'R' => read_value_from_cache( cache_op.value, &mut cache, &mut stream),
@@ -118,11 +137,11 @@ fn handle_client(mut stream: &mut TcpStream, mut cache:&mut Cache) {
 }
 
 
-fn read_value_from_cache( key:String, cache:&Cache, stream: &mut TcpStream){
-    let cache_opt = cache.read_item(String::from("a"));
-
+fn read_value_from_cache<'a>( key:String, cache:&Cache, stream: &mut TcpStream){
+    let cache_opt:Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt{
-        Some(val)=> {
+        Some(boxed_val)=> {
+            let val = *boxed_val;
             println!("Writing to stream {:?}", val);
             io::stdout().flush().unwrap();
             stream.write(&val[0..val.len()]);
