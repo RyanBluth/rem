@@ -1,5 +1,4 @@
-#[macro_use]
-extern crate log;
+#[macro_use] extern crate log;
 extern crate env_logger;
 
 use std::io::prelude::*;
@@ -16,25 +15,24 @@ use std::result;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use std::env;
+use std::env::Args;
 
-
-struct CacheOperation{
+struct CacheOperation {
     commands: Vec<char>,
     value: String
 }
 
-impl CacheOperation{
-
+impl CacheOperation {
     fn new_from_string(cache_op_str: &String) -> CacheOperation {
-        let mut cache_op = CacheOperation{
-            commands:Vec::new(),
-            value:String::new()
+        let mut cache_op = CacheOperation {
+            commands: Vec::new(),
+            value: String::new()
         };
         let mut idx = 0;
         let chars_iter = cache_op_str.chars();
         for c in chars_iter {
             idx += 1;
-            if c == '$'{
+            if c == '$' {
                 cache_op.value = String::from(&cache_op_str[idx..]);
                 break;
             }
@@ -45,28 +43,27 @@ impl CacheOperation{
 }
 
 
-struct Cache{
-    map_internal : HashMap<String, Vec<u8>>
+struct Cache {
+    map_internal: HashMap<String, Vec<u8>>
 }
 
-impl Cache{
-
-    fn new() -> Cache{
-        return Cache{
+impl Cache {
+    fn new() -> Cache {
+        return Cache {
             map_internal: HashMap::new()
         }
     }
 
-    fn cache_item( &mut self, key: String, val: Vec<u8>){
+    fn cache_item(&mut self, key: String, val: Vec<u8>) {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
-        let mut f:File = File::create(format!("_cache/{}", key)).unwrap();
+        let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
         f.write(&val.as_slice());
         f.flush();
         self.map_internal.insert(key, val);
     }
 
-    fn read_item( &self, key:String ) -> Option<Box<Vec<u8>>> {
+    fn read_item(&self, key: String) -> Option<Box<Vec<u8>>> {
         let mut res: Option<Box<Vec<u8>>> = None;
         if self.map_internal.contains_key(&key) {
             let res_opt = self.map_internal.get(&key);
@@ -87,14 +84,14 @@ impl Cache{
         return res;
     }
 
-    fn delete_item( &mut self, key:String ){
-        if self.map_internal.contains_key( &key ){
-            self.map_internal.remove( &key );
+    fn delete_item(&mut self, key: String) {
+        if self.map_internal.contains_key(&key) {
+            self.map_internal.remove(&key);
         }
         let path = format!("_cache/{}", key);
-        if Path::new(&path).exists(){
-            match fs::remove_file(path){
-                Ok(x)  => x,
+        if Path::new(&path).exists() {
+            match fs::remove_file(path) {
+                Ok(x) => x,
                 Err(e) => error!("Failed to delete file for key: {}", key)
             }
         }
@@ -102,76 +99,75 @@ impl Cache{
 }
 
 
-fn handle_client(mut stream: &mut TcpStream, mut cache:&Arc<Mutex<Cache>>) {
+fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) {
     stream.set_nodelay(true);
-    let mut buf_arr:[u8; 64] = [0; 64];
+    let mut buf_arr: [u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
 
     let mut size_str = String::new();
-    let mut buf_size:usize = 0;
-    for i in 0..64{
+    let mut buf_size: usize = 0;
+    for i in 0..64 {
         buf_size += 1;
-        if buf_arr[i] == '|' as u8{
+        if buf_arr[i] == '|' as u8 {
             break;
         }
         size_str.push(buf_arr[i as usize] as char);
     }
 
 
-    let upper_idx:usize = size_str.parse::<i32>().unwrap() as usize;
+    let upper_idx: usize = size_str.parse::<i32>().unwrap() as usize;
     let msg_buf = buf_arr;
     let mut buf_temp: Vec<u8> = msg_buf.to_vec();
     let mut buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
 
     stream.flush().unwrap();
 
-    let buf_str:String = String::from_utf8(buf).unwrap();
+    let buf_str: String = String::from_utf8(buf).unwrap();
     if buf_str.len() > 0 {
+        let cache_op: CacheOperation = CacheOperation::new_from_string(&buf_str);
 
-        let cache_op:CacheOperation = CacheOperation::new_from_string(&buf_str);
-
-        debug!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value );
+        debug!("cmds = {:?}, value = {}", cache_op.commands, cache_op.value);
 
         if cache_op.commands.len() > 0 {
-            let prim_cmd:char = cache_op.commands[0];
-            match prim_cmd{
+            let prim_cmd: char = cache_op.commands[0];
+            match prim_cmd {
                 'W' => write_stream_str_to_cache(cache_op.value, cache),
-                'R' => read_value_from_cache( cache_op.value, cache, &mut stream),
-                'D' => delete_value_from_cache( cache_op.value, cache ),
+                'R' => read_value_from_cache(cache_op.value, cache, &mut stream),
+                'D' => delete_value_from_cache(cache_op.value, cache),
                 _ => error!("Invalid cache command {:?}", prim_cmd)
             }
         }
-    }else{
+    } else {
         panic!("Empty cache operation");
     }
 }
 
 
-fn read_value_from_cache<'a>( key:String, cache_mtx:&Arc<Mutex<Cache>>, stream: &mut TcpStream){
+fn read_value_from_cache<'a>(key: String, cache_mtx: &Arc<Mutex<Cache>>, stream: &mut TcpStream) {
     let cache = cache_mtx.lock().unwrap();
-    let cache_opt:Option<Box<Vec<u8>>> = cache.read_item(key);
-    match cache_opt{
-        Some(boxed_val)=> {
+    let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
+    match cache_opt {
+        Some(boxed_val) => {
             let val = *boxed_val;
             debug!("Writing to stream {:?}", val);
             stream.write(&val[0..val.len()]);
             stream.flush();
         },
-        None =>{
-            stream.write(&[65,65,65,65]);
+        None => {
+            stream.write(&[65, 65, 65, 65]);
             stream.flush();
         }
     }
 }
 
-fn write_stream_str_to_cache(stream_str:String, cache_mtx:&Arc<Mutex<Cache>>){
-    let mut key:String = String::from("");
-    let mut val:String = String::from("");
+fn write_stream_str_to_cache(stream_str: String, cache_mtx: &Arc<Mutex<Cache>>) {
+    let mut key: String = String::from("");
+    let mut val: String = String::from("");
     let mut idx = 0;
     let mut chars_iter = stream_str.chars();
     for c in chars_iter {
         idx += 1;
-        if c == ':'{
+        if c == ':' {
             val = String::from(&stream_str[idx..]);
             break;
         }
@@ -179,39 +175,66 @@ fn write_stream_str_to_cache(stream_str:String, cache_mtx:&Arc<Mutex<Cache>>){
     }
     let bytes = val.into_bytes();
     let mut cache = cache_mtx.lock().unwrap();
-    cache.cache_item( key, bytes);
+    cache.cache_item(key, bytes);
 }
 
-fn delete_value_from_cache( key: String, cache_mtx:&Arc<Mutex<Cache>>){
+fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) {
     let mut cache = cache_mtx.lock().unwrap();
-    cache.delete_item( key );
+    cache.delete_item(key);
 }
 
 fn main() {
-
     env_logger::init().unwrap();
 
-    info!("Starting on port 8080");
+    let mut args: Args = env::args();
 
-    let listener:TcpListener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    let mut ip:String = String::from("127.0.0.1");
+    let mut port:String = String::from("8080");
+
+    loop{
+        match args.next().as_ref() {
+            Some(opt)=>{
+                match opt.as_ref(){
+                    "-port" => {
+                        match args.next(){
+                            Some(x) => port = x,
+                            None => break
+                        }
+                    },
+                    "-ip" =>{
+                        match args.next(){
+                            Some(x) => ip = x,
+                            None => break
+                        }
+                    }
+                    _ => continue
+                }
+            }
+            None => break
+        }
+    }
+
+    info!("Starting on {}:{}", ip, port);
+
+    let listener: TcpListener = TcpListener::bind( format!( "{}:{}", ip, port).as_str() ).unwrap();
     //let mut cache:Cache = Cache::new();
 
     let cache = Arc::new(Mutex::new(Cache::new()));
 
     // accept connections and process them, spawning a new thread for each one
     for stream in listener.incoming() {
-        let cache:Arc<Mutex<Cache>> = cache.clone();
+        let cache: Arc<Mutex<Cache>> = cache.clone();
         match stream {
             Ok(mut stream) => {
-                thread::spawn( move ||{
+                thread::spawn(move || {
                     info!("Incoming connection: {:?}", stream.peer_addr());
                     io::stdout().flush().unwrap();
-                    loop{
+                    loop {
                         handle_client(&mut stream, &cache);
                     }
                 });
             }
-            Err(e) => { error!{"Incoming connection failed"} }
+            Err(e) => { error! {"Incoming connection failed"} }
         }
     }
 }
