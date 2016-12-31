@@ -14,3 +14,5 @@ Cargo.lock
 **.iml
 
 /_cache/
+
+.vscode/
