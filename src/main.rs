@@ -17,6 +17,13 @@ use std::env;
 use std::error;
 use std::env::Args;
 
+
+enum Mode {
+    NONE,
+    CLIENT,
+    SERVER
+}
+
 struct CacheError {
     reason: String
 }
@@ -113,7 +120,7 @@ impl Cache {
 }
 
 
-fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> Result<(), CacheError>{
+fn string_from_stream( mut stream: &mut TcpStream ) -> String {
     stream.set_nodelay(true);
     let mut buf_arr: [u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
@@ -137,6 +144,11 @@ fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> R
     stream.flush().unwrap();
 
     let buf_str: String = String::from_utf8(buf).unwrap();
+    return buf_str;
+}
+
+fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> Result<(), CacheError>{
+    let buf_str: String = string_from_stream( stream );
     if buf_str.len() > 0 {
         let cache_op: CacheOperation = CacheOperation::new_from_string(&buf_str);
 
@@ -163,9 +175,11 @@ fn read_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>, stream: &mu
     let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt {
         Some(boxed_val) => {
-            let val = *boxed_val;
+            let mut val:Vec<u8> = *boxed_val;
             debug!("Writing to stream {:?}", val);
-            stream.write(&val[0..val.len()]);
+            let mut sized_val:Vec<u8> = String::from(format!("{}|", val.len())).into_bytes();
+            sized_val.append(val.as_mut());
+            stream.write( &sized_val.as_slice() );
             stream.flush();
             return Ok(());
         },
@@ -200,6 +214,74 @@ fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result
     return cache.delete_item(key);
 }
 
+fn launch_client( ip:String, port:String ){
+    info!("Connection to {}:{}", ip, port);
+
+    match TcpStream::connect(format!("{}:{}", ip, port).as_str()){
+        Ok( mut stream ) => {
+            loop {
+                 let stdin = io::stdin();
+                 for line_res in stdin.lock().lines() {
+                    let mut line:String = line_res.unwrap();
+                    if line.starts_with("write "){
+                        let key_val = String::from(&line["write ".len()..line.len()]);
+                        let delim_idx = key_val.find(" ").unwrap();
+                        let key = &key_val[0..delim_idx];
+                        let val = &key_val[delim_idx + 1..key_val.len()];
+                        let sized_val = String::from( format!("W${}:{}", key, val));
+                        let formatted = String::from(format!("{}|{}", sized_val.len(), sized_val));
+                        stream.write(formatted.as_bytes());
+                        stream.flush();
+                    }else if line.starts_with("read "){
+                        let key = String::from(&line["read ".len()..line.len()]);
+                        let cmd_val = String::from( format!("R${}", key));
+                        let sized_val = String::from( format!("{}|{}", cmd_val.len(), cmd_val));
+                        stream.write( String::from(sized_val).as_bytes());
+                        stream.flush();
+                        let val:String = string_from_stream( &mut stream );
+                        println!("{}", val);
+                        io::stdout().flush();
+                    }else if line.starts_with("delete "){
+
+                    }
+                }
+            }
+        },
+        Err(e) => {
+            panic!("Failed to connect to server");
+        }
+    }
+
+}
+
+fn launch_server( ip:String, port:String ){
+
+    info!("Starting on {}:{}", ip, port);
+
+    let listener: TcpListener = TcpListener::bind( format!( "{}:{}", ip, port).as_str() ).unwrap();
+
+    let cache = Arc::new(Mutex::new(Cache::new()));
+
+    loop{
+        // accept connections and process them, spawning a new thread for each one
+        for stream in listener.incoming() {
+            let cache: Arc<Mutex<Cache>> = cache.clone();
+            match stream {
+                Ok(mut stream) => {
+                    thread::spawn(move || {
+                        info!("Incoming connection: {:?}", stream.peer_addr());
+                        io::stdout().flush().unwrap();
+                        loop {
+                            handle_client(&mut stream, &cache);
+                        }
+                    });
+                }
+                Err(e) => { error! {"Incoming connection failed"} }
+            }
+        }
+    }
+}
+
 fn main() {
     env_logger::init().unwrap();
 
@@ -208,10 +290,18 @@ fn main() {
     let mut ip:String = String::from("127.0.0.1");
     let mut port:String = String::from("8080");
 
+    let mut mode:Mode = Mode::NONE;
+
     loop{
         match args.next().as_ref() {
             Some(opt)=>{
                 match opt.as_ref(){
+                    "server" => {
+                        mode = Mode::SERVER;
+                    },
+                    "client" => {
+                        mode = Mode::CLIENT;
+                    }
                     "-port" => {
                         match args.next(){
                             Some(x) => port = x,
@@ -231,27 +321,11 @@ fn main() {
         }
     }
 
-    info!("Starting on {}:{}", ip, port);
 
-    let listener: TcpListener = TcpListener::bind( format!( "{}:{}", ip, port).as_str() ).unwrap();
-
-    let cache = Arc::new(Mutex::new(Cache::new()));
-
-    // accept connections and process them, spawning a new thread for each one
-    for stream in listener.incoming() {
-        let cache: Arc<Mutex<Cache>> = cache.clone();
-        match stream {
-            Ok(mut stream) => {
-                thread::spawn(move || {
-                    info!("Incoming connection: {:?}", stream.peer_addr());
-                    io::stdout().flush().unwrap();
-                    loop {
-                        handle_client(&mut stream, &cache);
-                    }
-                });
-            }
-            Err(e) => { error! {"Incoming connection failed"} }
-        }
+    match mode {
+        Mode::CLIENT => launch_client(ip, port),
+        Mode::SERVER => launch_server(ip, port),
+        Mode::NONE => panic!("Mode must be specified")
     }
 }
 
