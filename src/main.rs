@@ -120,7 +120,7 @@ impl Cache {
 }
 
 
-fn string_from_stream( mut stream: &mut TcpStream ) -> String {
+fn string_from_stream( stream: &mut TcpStream ) -> String {
     stream.set_nodelay(true);
     let mut buf_arr: [u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
@@ -170,22 +170,18 @@ fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> R
 }
 
 
-fn read_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>, stream: &mut TcpStream) -> Result<(), CacheError> {
-    let cache = cache_mtx.lock().unwrap();
+fn read_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>, mut stream: &mut TcpStream) -> Result<(), CacheError> {
+    let cache = cache_mtx. lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt {
         Some(boxed_val) => {
             let mut val:Vec<u8> = *boxed_val;
             debug!("Writing to stream {:?}", val);
-            let mut sized_val:Vec<u8> = String::from(format!("{}|", val.len())).into_bytes();
-            sized_val.append(val.as_mut());
-            stream.write( &sized_val.as_slice() );
-            stream.flush();
+            write_str_to_stream_with_size( &mut stream, String::from_utf8( val ).unwrap());
             return Ok(());
         },
         None => {
-            stream.write(&[65, 65, 65, 65]);
-            stream.flush();
+            write_str_to_stream_with_size( &mut stream, String::from("Invalid Key"));
             return Err(CacheError::with_reason(String::from("Could not read from cache")));
         }
     }
@@ -214,6 +210,12 @@ fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result
     return cache.delete_item(key);
 }
 
+fn write_str_to_stream_with_size( stream:&mut TcpStream, value:String ){
+    let sized_val = String::from( format!("{}|{}", value.len(), value));
+    stream.write( String::from(sized_val).as_bytes());
+    stream.flush();
+}
+
 fn launch_client( ip:String, port:String ){
     info!("Connection to {}:{}", ip, port);
 
@@ -229,20 +231,18 @@ fn launch_client( ip:String, port:String ){
                         let key = &key_val[0..delim_idx];
                         let val = &key_val[delim_idx + 1..key_val.len()];
                         let sized_val = String::from( format!("W${}:{}", key, val));
-                        let formatted = String::from(format!("{}|{}", sized_val.len(), sized_val));
-                        stream.write(formatted.as_bytes());
-                        stream.flush();
+                        write_str_to_stream_with_size( &mut stream, sized_val );
                     }else if line.starts_with("read "){
                         let key = String::from(&line["read ".len()..line.len()]);
                         let cmd_val = String::from( format!("R${}", key));
-                        let sized_val = String::from( format!("{}|{}", cmd_val.len(), cmd_val));
-                        stream.write( String::from(sized_val).as_bytes());
-                        stream.flush();
+                        write_str_to_stream_with_size( &mut stream, cmd_val );
                         let val:String = string_from_stream( &mut stream );
                         println!("{}", val);
                         io::stdout().flush();
                     }else if line.starts_with("delete "){
-
+                        let key = String::from(&line["delete ".len()..line.len()]);
+                        let cmd_val = String::from( format!("D${}", key));
+                        write_str_to_stream_with_size( &mut stream, cmd_val )
                     }
                 }
             }
@@ -251,7 +251,6 @@ fn launch_client( ip:String, port:String ){
             panic!("Failed to connect to server");
         }
     }
-
 }
 
 fn launch_server( ip:String, port:String ){
@@ -325,7 +324,7 @@ fn main() {
     match mode {
         Mode::CLIENT => launch_client(ip, port),
         Mode::SERVER => launch_server(ip, port),
-        Mode::NONE => panic!("Mode must be specified")
+        Mode::NONE   => panic!("Mode must be specified")
     }
 }
 
