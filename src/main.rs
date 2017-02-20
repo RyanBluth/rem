@@ -10,7 +10,6 @@ use std::vec::Vec;
 use std::path::Path;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
-use std::result;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use std::env;
@@ -93,7 +92,7 @@ impl Cache {
             }
         } else {
             let mut buf: Vec<u8> = Vec::new();
-            let mut f_res = match File::open(&key) {
+            let f_res = match File::open(format!("_cache/{}", key)) {
                 Err(why) => res = None,
                 Ok(mut file) => {
                     file.read_to_end(&mut buf);
