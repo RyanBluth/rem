@@ -13,16 +13,17 @@ use std::thread;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use std::env;
-use std::error;
 use std::env::Args;
 
 
+/// The different run modes for REM
 enum Mode {
     NONE,
     CLIENT,
     SERVER
 }
 
+/// Simple error structure to be used when errors occur during a cache operation
 struct CacheError {
     reason: String
 }
@@ -35,12 +36,19 @@ impl CacheError{
     }
 }
 
+
+/// A structure to store a series of cache operations and a value
+/// Cache operations are represented by a single character
 struct CacheOperation {
     commands: Vec<char>,
     value: String
 }
 
 impl CacheOperation {
+    /// Creates a new CacheOperation instance from an input string
+    /// Stores the commands and corresponding value
+    /// Write Example: ```W$abc:def``` 
+    /// The resulting command would be W with a value of abc:def
     fn new_from_string(cache_op_str: &String) -> CacheOperation {
         let mut cache_op = CacheOperation {
             commands: Vec::new(),
@@ -48,12 +56,15 @@ impl CacheOperation {
         };
         let mut idx = 0;
         let chars_iter = cache_op_str.chars();
+        // Read the string until $ is found
         for c in chars_iter {
             idx += 1;
             if c == '$' {
+                // Set the value to everything after $
                 cache_op.value = String::from(&cache_op_str[idx..]);
                 break;
             }
+            // Add a new command for each iteration where $ hasn't been found yet
             cache_op.commands.push(c);
         }
         return cache_op;
@@ -61,6 +72,7 @@ impl CacheOperation {
 }
 
 
+/// Cache object -- Simple wrapper around a map
 struct Cache {
     map_internal: HashMap<String, Vec<u8>>
 }
@@ -72,6 +84,13 @@ impl Cache {
         }
     }
 
+    /// Writes the provided value to the cache using the provided key
+    ///
+    /// The value will be written to the in memory store and the file store
+    ///
+    /// The _cache directory will be created if it does not exist
+    ///
+    /// If a value for the provided key already exists it will be overwritten 
     fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), CacheError>{
         debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
@@ -82,6 +101,12 @@ impl Cache {
         return Ok(());
     }
 
+    /// Reads a value from the cache
+    ///
+    /// If the key is found in the in memory map then the corresponding value is returned
+    ///
+    /// If the key cannot be found in the map then an attempt will be made to load the value  
+    /// from the file corresponding with the key
     fn read_item(&self, key: String) -> Option<Box<Vec<u8>>> {
         let mut res: Option<Box<Vec<u8>>> = None;
         if self.map_internal.contains_key(&key) {
@@ -103,6 +128,11 @@ impl Cache {
         return res;
     }
 
+    /// Delete's an item from the cache
+    ///
+    /// If the key is found in the in memory map then that entry will be removed
+    ///
+    /// The file corresponding to the key will also be deleted
     fn delete_item(&mut self, key: String) -> Result<(), CacheError>{
         if self.map_internal.contains_key(&key) {
             self.map_internal.remove(&key);
@@ -119,11 +149,16 @@ impl Cache {
 }
 
 
+/// Parses a TCP input stream and extracts the data
+/// Allocates a 64 byte buffer which is used to read the input info from the stream
+/// The expected format is ```{size}|{content}``` 
+/// Ex. ```5|W$a:b```
 fn string_from_stream( stream: &mut TcpStream ) -> String {
+    //Read in the first 54 bytes of the stram
     stream.set_nodelay(true);
     let mut buf_arr: [u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
-
+    // Parse the message size 
     let mut size_str = String::new();
     let mut buf_size: usize = 0;
     for i in 0..64 {
@@ -134,14 +169,15 @@ fn string_from_stream( stream: &mut TcpStream ) -> String {
         size_str.push(buf_arr[i as usize] as char);
     }
 
-
+    // Convert the size string to a usize so it can be used to drain the buffer
     let upper_idx: usize = size_str.parse::<i32>().unwrap() as usize;
-    let msg_buf = buf_arr;
-    let mut buf_temp: Vec<u8> = msg_buf.to_vec();
+    let mut buf_temp: Vec<u8> = buf_arr.to_vec();
+    // Create a new buffer using the parsed indicies
     let mut buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
 
     stream.flush().unwrap();
 
+    // Return the value as a string 
     let buf_str: String = String::from_utf8(buf).unwrap();
     return buf_str;
 }
@@ -170,7 +206,7 @@ fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> R
 
 
 fn read_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>, mut stream: &mut TcpStream) -> Result<(), CacheError> {
-    let cache = cache_mtx. lock().unwrap();
+    let cache = cache_mtx.lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt {
         Some(boxed_val) => {
@@ -285,6 +321,7 @@ fn main() {
 
     let mut args: Args = env::args();
 
+    // Set default values for arguments
     let mut ip:String = String::from("127.0.0.1");
     let mut port:String = String::from("8080");
 
