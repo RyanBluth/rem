@@ -1,4 +1,5 @@
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate env_logger;
 
 use std::io::prelude::*;
@@ -20,19 +21,18 @@ use std::env::Args;
 enum Mode {
     NONE,
     CLIENT,
-    SERVER
+    SERVER,
 }
 
 /// Simple error structure to be used when errors occur during a cache operation
+#[derive(Debug)]
 struct CacheError {
-    reason: String
+    reason: String,
 }
 
-impl CacheError{
-    pub fn with_reason( reason: String ) -> CacheError {
-        return CacheError{
-            reason: reason.clone() 
-        }
+impl CacheError {
+    pub fn with_reason(reason: String) -> CacheError {
+        return CacheError { reason: reason };
     }
 }
 
@@ -41,18 +41,18 @@ impl CacheError{
 /// Cache operations are represented by a single character
 struct CacheOperation {
     commands: Vec<char>,
-    value: String
+    value: String,
 }
 
 impl CacheOperation {
     /// Creates a new CacheOperation instance from an input string
     /// Stores the commands and corresponding value
-    /// Write Example: ```W$abc:def``` 
+    /// Write Example: ```W$abc:def```
     /// The resulting command would be W with a value of abc:def
     fn new_from_string(cache_op_str: &String) -> CacheOperation {
         let mut cache_op = CacheOperation {
             commands: Vec::new(),
-            value: String::new()
+            value: String::new(),
         };
         let mut idx = 0;
         let chars_iter = cache_op_str.chars();
@@ -74,14 +74,12 @@ impl CacheOperation {
 
 /// Cache object -- Simple wrapper around a map
 struct Cache {
-    map_internal: HashMap<String, Vec<u8>>
+    map_internal: HashMap<String, Vec<u8>>,
 }
 
 impl Cache {
     fn new() -> Cache {
-        return Cache {
-            map_internal: HashMap::new()
-        }
+        return Cache { map_internal: HashMap::new() };
     }
 
     /// Writes the provided value to the cache using the provided key
@@ -90,8 +88,8 @@ impl Cache {
     ///
     /// The _cache directory will be created if it does not exist
     ///
-    /// If a value for the provided key already exists it will be overwritten 
-    fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), CacheError>{
+    /// If a value for the provided key already exists it will be overwritten
+    fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), CacheError> {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
         let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
@@ -105,15 +103,15 @@ impl Cache {
     ///
     /// If the key is found in the in memory map then the corresponding value is returned
     ///
-    /// If the key cannot be found in the map then an attempt will be made to load the value  
+    /// If the key cannot be found in the map then an attempt will be made to load the value
     /// from the file corresponding with the key
     fn read_item(&self, key: String) -> Option<Box<Vec<u8>>> {
-        let mut res: Option<Box<Vec<u8>>> = None;
+        let mut res: Option<Box<Vec<u8>>>;
         if self.map_internal.contains_key(&key) {
             let res_opt = self.map_internal.get(&key);
             match res_opt {
                 Some(vec_ref) => res = Some(Box::new(vec_ref.clone())),
-                None => res = None
+                None => res = None,
             }
         } else {
             let mut buf: Vec<u8> = Vec::new();
@@ -133,7 +131,7 @@ impl Cache {
     /// If the key is found in the in memory map then that entry will be removed
     ///
     /// The file corresponding to the key will also be deleted
-    fn delete_item(&mut self, key: String) -> Result<(), CacheError>{
+    fn delete_item(&mut self, key: String) -> Result<(), CacheError> {
         if self.map_internal.contains_key(&key) {
             self.map_internal.remove(&key);
         }
@@ -141,24 +139,28 @@ impl Cache {
         if Path::new(&path).exists() {
             match fs::remove_file(path) {
                 Ok(x) => x,
-                Err(e) => return Err(CacheError::with_reason(format!("Failed to delete file for key: {}", key)))
+                Err(e) => {
+                    return Err(CacheError::with_reason(format!("Failed to delete file for key: \
+                                                                {}",
+                                                               key)))
+                }
             }
         }
-        return Ok(())
+        return Ok(());
     }
 }
 
 
 /// Parses a TCP input stream and extracts the data
 /// Allocates a 64 byte buffer which is used to read the input info from the stream
-/// The expected format is ```{size}|{content}``` 
+/// The expected format is ```{size}|{content}```
 /// Ex. ```5|W$a:b```
-fn string_from_stream( stream: &mut TcpStream ) -> String {
+fn string_from_stream(stream: &mut TcpStream) -> String {
     //Read in the first 54 bytes of the stram
     stream.set_nodelay(true);
     let mut buf_arr: [u8; 64] = [0; 64];
     stream.read(&mut buf_arr);
-    // Parse the message size 
+    // Parse the message size
     let mut size_str = String::new();
     let mut buf_size: usize = 0;
     for i in 0..64 {
@@ -173,17 +175,19 @@ fn string_from_stream( stream: &mut TcpStream ) -> String {
     let upper_idx: usize = size_str.parse::<i32>().unwrap() as usize;
     let mut buf_temp: Vec<u8> = buf_arr.to_vec();
     // Create a new buffer using the parsed indicies
-    let mut buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
+    let buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
 
     stream.flush().unwrap();
 
-    // Return the value as a string 
+    // Return the value as a string
     let buf_str: String = String::from_utf8(buf).unwrap();
     return buf_str;
 }
 
-fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> Result<(), CacheError>{
-    let buf_str: String = string_from_stream( stream );
+fn handle_client(mut stream: &mut TcpStream,
+                 cache: &Arc<Mutex<Cache>>)
+                 -> Result<(), CacheError> {
+    let buf_str: String = string_from_stream(stream);
     if buf_str.len() > 0 {
         let cache_op: CacheOperation = CacheOperation::new_from_string(&buf_str);
 
@@ -195,8 +199,8 @@ fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> R
                 'W' => write_stream_str_to_cache(cache_op.value, cache),
                 'R' => read_value_from_cache(cache_op.value, cache, &mut stream),
                 'D' => delete_value_from_cache(cache_op.value, cache),
-                _ => Err(CacheError::with_reason(format!("Invalid cache command {:?}", prim_cmd)))
-            }
+                _ => Err(CacheError::with_reason(format!("Invalid cache command {:?}", prim_cmd))),
+            };
         }
     } else {
         panic!("Empty cache operation");
@@ -205,24 +209,29 @@ fn handle_client(mut stream: &mut TcpStream, mut cache: &Arc<Mutex<Cache>>) -> R
 }
 
 
-fn read_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>, mut stream: &mut TcpStream) -> Result<(), CacheError> {
+fn read_value_from_cache(key: String,
+                         cache_mtx: &Arc<Mutex<Cache>>,
+                         mut stream: &mut TcpStream)
+                         -> Result<(), CacheError> {
     let cache = cache_mtx.lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt {
         Some(boxed_val) => {
-            let mut val:Vec<u8> = *boxed_val;
+            let val: Vec<u8> = *boxed_val;
             debug!("Writing to stream {:?}", val);
-            write_str_to_stream_with_size( &mut stream, String::from_utf8( val ).unwrap());
+            write_str_to_stream_with_size(&mut stream, String::from_utf8(val).unwrap());
             return Ok(());
-        },
+        }
         None => {
-            write_str_to_stream_with_size( &mut stream, String::from("Invalid Key"));
+            write_str_to_stream_with_size(&mut stream, String::from("Invalid Key"));
             return Err(CacheError::with_reason(String::from("Could not read from cache")));
         }
     }
 }
 
-fn write_stream_str_to_cache(stream_str: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), CacheError>{
+fn write_stream_str_to_cache(stream_str: String,
+                             cache_mtx: &Arc<Mutex<Cache>>)
+                             -> Result<(), CacheError> {
     let mut key: String = String::new();
     let mut val: String = String::new();
     let mut idx = 0;
@@ -240,63 +249,90 @@ fn write_stream_str_to_cache(stream_str: String, cache_mtx: &Arc<Mutex<Cache>>) 
     return cache.cache_item(key, bytes);
 }
 
-fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), CacheError>{
+fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), CacheError> {
     let mut cache = cache_mtx.lock().unwrap();
     return cache.delete_item(key);
 }
 
-fn write_str_to_stream_with_size( stream:&mut TcpStream, value:String ){
-    let sized_val = String::from( format!("{}|{}", value.len(), value));
-    stream.write( String::from(sized_val).as_bytes());
+fn write_str_to_stream_with_size(stream: &mut TcpStream, value: String) {
+    let sized_val = String::from(format!("{}|{}", value.len(), value));
+    stream.write(String::from(sized_val).as_bytes());
     stream.flush();
 }
 
-fn launch_client( ip:String, port:String ){
+fn launch_client(ip: String, port: String) {
     info!("Connection to {}:{}", ip, port);
 
-    match TcpStream::connect(format!("{}:{}", ip, port).as_str()){
-        Ok( mut stream ) => {
+    match TcpStream::connect(format!("{}:{}", ip, port).as_str()) {
+        Ok(mut stream) => {
             loop {
-                 let stdin = io::stdin();
-                 for line_res in stdin.lock().lines() {
-                    let mut line:String = line_res.unwrap();
-                    if line.starts_with("write "){
-                        let key_val = String::from(&line["write ".len()..line.len()]);
-                        let delim_idx = key_val.find(" ").unwrap();
-                        let key = &key_val[0..delim_idx];
-                        let val = &key_val[delim_idx + 1..key_val.len()];
-                        let sized_val = String::from( format!("W${}:{}", key, val));
-                        write_str_to_stream_with_size( &mut stream, sized_val );
-                    }else if line.starts_with("read "){
-                        let key = String::from(&line["read ".len()..line.len()]);
-                        let cmd_val = String::from( format!("R${}", key));
-                        write_str_to_stream_with_size( &mut stream, cmd_val );
-                        let val:String = string_from_stream( &mut stream );
-                        println!("{}", val);
-                        io::stdout().flush();
-                    }else if line.starts_with("delete "){
-                        let key = String::from(&line["delete ".len()..line.len()]);
-                        let cmd_val = String::from( format!("D${}", key));
-                        write_str_to_stream_with_size( &mut stream, cmd_val )
+                // Contine looping, executing any commands from the user
+                let stdin = io::stdin();
+                for line_res in stdin.lock().lines() {
+                    let line: String = line_res.unwrap();
+                    if line.starts_with("write ") {
+                        client_exec_write(line, &mut stream);
+                    } else if line.starts_with("read ") {
+                        client_exec_read(line, &mut stream);
+                    } else if line.starts_with("delete ") {
+                        client_exec_delete(line, &mut stream);
                     }
                 }
             }
-        },
+        }
         Err(e) => {
-            panic!("Failed to connect to server");
+            panic!("Failed to connect to server. Error '{}'", e);
         }
     }
 }
 
-fn launch_server( ip:String, port:String ){
+
+/// Executres a write operation by parsing the client command and converting it to REM format
+/// ex: write abc:def would be converted to 9|W$abc:def and sent to the REM server
+fn client_exec_write(line: String, mut stream: &mut TcpStream) {
+    let key_val = String::from(&line["write ".len()..line.len()]);
+    let delim_idx = key_val.find(" ").unwrap();
+    let key = &key_val[0..delim_idx];
+    let val = &key_val[delim_idx + 1..key_val.len()];
+    let sized_val = String::from(format!("W${}:{}", key, val));
+    write_str_to_stream_with_size(&mut stream, sized_val);
+}
+
+/// Executres a read operation by parsing the client command and converting it to REM format
+/// ex: read abc:def would be converted to 5|R$abc and sent to the REM launch_server
+/// The respone from the REM server is writen to stdout
+/// If stdout::flush fail a warning will be logged
+fn client_exec_read(line: String, mut stream: &mut TcpStream) {
+    let key = String::from(&line["read ".len()..line.len()]);
+    let cmd_val = String::from(format!("R${}", key));
+    write_str_to_stream_with_size(&mut stream, cmd_val);
+    let val: String = string_from_stream(&mut stream);
+    println!("{}", val);
+    let flush_res = io::stdout().flush();
+    if flush_res.is_err() {
+        warn!("Failed to flush standart out. Error '{:?}'",
+              flush_res.err());
+    }
+}
+
+/// Executres a delete operation by parsing the client command and converting it to REM format
+/// ex: delete abc would be converted to 5|D$abc and sent to the REM server
+fn client_exec_delete(line: String, mut stream: &mut TcpStream) {
+    let key = String::from(&line["delete ".len()..line.len()]);
+    let cmd_val = String::from(format!("D${}", key));
+    write_str_to_stream_with_size(&mut stream, cmd_val)
+}
+
+
+fn launch_server(ip: String, port: String) {
 
     info!("Starting on {}:{}", ip, port);
 
-    let listener: TcpListener = TcpListener::bind( format!( "{}:{}", ip, port).as_str() ).unwrap();
+    let listener: TcpListener = TcpListener::bind(format!("{}:{}", ip, port).as_str()).unwrap();
 
     let cache = Arc::new(Mutex::new(Cache::new()));
 
-    loop{
+    loop {
         // accept connections and process them, spawning a new thread for each one
         for stream in listener.incoming() {
             let cache: Arc<Mutex<Cache>> = cache.clone();
@@ -306,11 +342,15 @@ fn launch_server( ip:String, port:String ){
                         info!("Incoming connection: {:?}", stream.peer_addr());
                         io::stdout().flush().unwrap();
                         loop {
-                            handle_client(&mut stream, &cache);
+                            let client_res = handle_client(&mut stream, &cache);
+                            if client_res.is_err() {
+                                error!("An error occured while handling a client connection {:?}",
+                                       client_res.err());
+                            }
                         }
                     });
                 }
-                Err(e) => { error! {"Incoming connection failed"} }
+                Err(e) => error!("Incoming connection failed. Error {}", e),
             }
         }
     }
@@ -322,37 +362,37 @@ fn main() {
     let mut args: Args = env::args();
 
     // Set default values for arguments
-    let mut ip:String = String::from("127.0.0.1");
-    let mut port:String = String::from("8080");
+    let mut ip: String = String::from("127.0.0.1");
+    let mut port: String = String::from("8080");
 
-    let mut mode:Mode = Mode::NONE;
+    let mut mode: Mode = Mode::NONE;
 
-    loop{
+    loop {
         match args.next().as_ref() {
-            Some(opt)=>{
-                match opt.as_ref(){
+            Some(opt) => {
+                match opt.as_ref() {
                     "server" => {
                         mode = Mode::SERVER;
-                    },
+                    }
                     "client" => {
                         mode = Mode::CLIENT;
                     }
                     "-port" => {
-                        match args.next(){
+                        match args.next() {
                             Some(x) => port = x,
-                            None => break
-                        }
-                    },
-                    "-ip" =>{
-                        match args.next(){
-                            Some(x) => ip = x,
-                            None => break
+                            None => break,
                         }
                     }
-                    _ => continue
+                    "-ip" => {
+                        match args.next() {
+                            Some(x) => ip = x,
+                            None => break,
+                        }
+                    }
+                    _ => continue,
                 }
             }
-            None => break
+            None => break,
         }
     }
 
@@ -360,7 +400,6 @@ fn main() {
     match mode {
         Mode::CLIENT => launch_client(ip, port),
         Mode::SERVER => launch_server(ip, port),
-        Mode::NONE   => panic!("Mode must be specified")
+        Mode::NONE => panic!("Mode must be specified"),
     }
 }
-
