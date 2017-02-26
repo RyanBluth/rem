@@ -16,10 +16,12 @@ use std::sync::{Arc, Mutex};
 use std::env;
 use std::env::Args;
 use std::fmt;
+use std::error::Error;
 
 const REM_00001: &'static str = "REM_00001: A run mode must be specified. One of [server, client] \
                                  expected";
 const REM_00002: &'static str = "REM_00002: Unexpected argument encountered";
+const REM_00003: &'static str = "REM_00003: IO operation failed";
 
 
 /// The different run modes for REM
@@ -91,6 +93,12 @@ impl fmt::Display for RemError {
     }
 }
 
+impl From<io::Error> for RemError {
+    fn from(e: io::Error) -> RemError {
+       return RemError::with_reason_str_and_details(REM_00003, String::from(e.description()));
+    }
+}
+
 
 /// A structure to store a series of cache operations and a value
 /// Cache operations are represented by a single character
@@ -148,8 +156,8 @@ impl Cache {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
         let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
-        f.write(&val.as_slice());
-        f.flush();
+        try!(f.write(&val.as_slice()));
+        try!(f.flush());
         self.map_internal.insert(key, val);
         return Ok(());
     }
@@ -307,10 +315,11 @@ fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result
     return cache.delete_item(key);
 }
 
-fn write_str_to_stream_with_size(stream: &mut TcpStream, value: String) {
+fn write_str_to_stream_with_size(stream: &mut TcpStream, value: String) -> Result<(), RemError>  {
     let sized_val = String::from(format!("{}|{}", value.len(), value));
-    stream.write(String::from(sized_val).as_bytes());
-    stream.flush();
+    try!(stream.write(String::from(sized_val).as_bytes()));
+    try!(stream.flush());
+    return Ok(());
 }
 
 fn launch_client(ip: String, port: String) {
@@ -355,10 +364,10 @@ fn client_exec_write(line: String, mut stream: &mut TcpStream) {
 /// ex: read abc:def would be converted to 5|R$abc and sent to the REM launch_server
 /// The respone from the REM server is writen to stdout
 /// If stdout::flush fail a warning will be logged
-fn client_exec_read(line: String, mut stream: &mut TcpStream) {
+fn client_exec_read(line: String, mut stream: &mut TcpStream)-> Result<(), RemError>{
     let key = String::from(&line["read ".len()..line.len()]);
     let cmd_val = String::from(format!("R${}", key));
-    write_str_to_stream_with_size(&mut stream, cmd_val);
+    try!(write_str_to_stream_with_size(&mut stream, cmd_val));
     let val: String = string_from_stream(&mut stream);
     println!("{}", val);
     let flush_res = io::stdout().flush();
@@ -366,14 +375,15 @@ fn client_exec_read(line: String, mut stream: &mut TcpStream) {
         warn!("Failed to flush standart out. Error '{:?}'",
               flush_res.err());
     }
+    return Ok(());
 }
 
 /// Executes a delete operation by parsing the client command and converting it to REM format
 /// ex: delete abc would be converted to 5|D$abc and sent to the REM server
-fn client_exec_delete(line: String, mut stream: &mut TcpStream) {
+fn client_exec_delete(line: String, mut stream: &mut TcpStream) -> Result<(), RemError>{
     let key = String::from(&line["delete ".len()..line.len()]);
     let cmd_val = String::from(format!("D${}", key));
-    write_str_to_stream_with_size(&mut stream, cmd_val)
+    return write_str_to_stream_with_size(&mut stream, cmd_val);
 }
 
 
