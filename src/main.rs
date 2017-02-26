@@ -15,6 +15,11 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 use std::env;
 use std::env::Args;
+use std::fmt;
+
+const REM_00001: &'static str = "REM_00001: A run mode must be specified. One of [server, client] \
+                                 expected";
+const REM_00002: &'static str = "REM_00002: Unexpected argument encountered";
 
 
 /// The different run modes for REM
@@ -26,13 +31,63 @@ enum Mode {
 
 /// Simple error structure to be used when errors occur during a cache operation
 #[derive(Debug)]
-struct CacheError {
+struct RemError {
     reason: String,
+    details: Option<String>,
 }
 
-impl CacheError {
-    pub fn with_reason(reason: String) -> CacheError {
-        return CacheError { reason: reason };
+impl RemError {
+    pub fn with_reason(reason: String) -> RemError {
+        return RemError {
+            reason: reason,
+            details: Option::None,
+        };
+    }
+
+    pub fn with_reason_str(reason: &'static str) -> RemError {
+        return RemError {
+            reason: String::from(reason),
+            details: Option::None,
+        };
+    }
+
+    pub fn with_reason_str_and_details(reason: &'static str, details: String) -> RemError {
+        return RemError {
+            reason: String::from(reason),
+            details: Some(details),
+        };
+    }
+
+
+    pub fn log(self) {
+        match self.details {
+            None => error!("{}", self.reason),
+            Some(details) => error!("{}: {}", self.reason, details), 
+        }
+    }
+
+    pub fn log_and_exit(self) {
+        self.log();
+        std::process::exit(1);
+    }
+
+    pub fn print(self) {
+        match self.details {
+            None => print!("{}", self.reason),
+            Some(details) => print!("{}. Details: {}", self.reason, details), 
+        }
+        match io::stdout().flush() {
+            Err(why) => {
+                warn!("Failed to flush standart out. Error '{:?}'", why);
+            }
+            _ => (),
+        }
+    }
+}
+
+impl fmt::Display for RemError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        return write!(formatter, "{}", self.reason);
     }
 }
 
@@ -89,7 +144,7 @@ impl Cache {
     /// The _cache directory will be created if it does not exist
     ///
     /// If a value for the provided key already exists it will be overwritten
-    fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), CacheError> {
+    fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), RemError> {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
         fs::create_dir("_cache");
         let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
@@ -131,7 +186,7 @@ impl Cache {
     /// If the key is found in the in memory map then that entry will be removed
     ///
     /// The file corresponding to the key will also be deleted
-    fn delete_item(&mut self, key: String) -> Result<(), CacheError> {
+    fn delete_item(&mut self, key: String) -> Result<(), RemError> {
         if self.map_internal.contains_key(&key) {
             self.map_internal.remove(&key);
         }
@@ -140,9 +195,9 @@ impl Cache {
             match fs::remove_file(path) {
                 Ok(x) => x,
                 Err(e) => {
-                    return Err(CacheError::with_reason(format!("Failed to delete file for key: \
+                    return Err(RemError::with_reason(format!("Failed to delete file for key: \
                                                                 {}",
-                                                               key)))
+                                                             key)))
                 }
             }
         }
@@ -184,9 +239,7 @@ fn string_from_stream(stream: &mut TcpStream) -> String {
     return buf_str;
 }
 
-fn handle_client(mut stream: &mut TcpStream,
-                 cache: &Arc<Mutex<Cache>>)
-                 -> Result<(), CacheError> {
+fn handle_client(mut stream: &mut TcpStream, cache: &Arc<Mutex<Cache>>) -> Result<(), RemError> {
     let buf_str: String = string_from_stream(stream);
     if buf_str.len() > 0 {
         let cache_op: CacheOperation = CacheOperation::new_from_string(&buf_str);
@@ -199,7 +252,7 @@ fn handle_client(mut stream: &mut TcpStream,
                 'W' => write_stream_str_to_cache(cache_op.value, cache),
                 'R' => read_value_from_cache(cache_op.value, cache, &mut stream),
                 'D' => delete_value_from_cache(cache_op.value, cache),
-                _ => Err(CacheError::with_reason(format!("Invalid cache command {:?}", prim_cmd))),
+                _ => Err(RemError::with_reason(format!("Invalid cache command {:?}", prim_cmd))),
             };
         }
     } else {
@@ -212,7 +265,7 @@ fn handle_client(mut stream: &mut TcpStream,
 fn read_value_from_cache(key: String,
                          cache_mtx: &Arc<Mutex<Cache>>,
                          mut stream: &mut TcpStream)
-                         -> Result<(), CacheError> {
+                         -> Result<(), RemError> {
     let cache = cache_mtx.lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
     match cache_opt {
@@ -224,14 +277,14 @@ fn read_value_from_cache(key: String,
         }
         None => {
             write_str_to_stream_with_size(&mut stream, String::from("Invalid Key"));
-            return Err(CacheError::with_reason(String::from("Could not read from cache")));
+            return Err(RemError::with_reason(String::from("Could not read from cache")));
         }
     }
 }
 
 fn write_stream_str_to_cache(stream_str: String,
                              cache_mtx: &Arc<Mutex<Cache>>)
-                             -> Result<(), CacheError> {
+                             -> Result<(), RemError> {
     let mut key: String = String::new();
     let mut val: String = String::new();
     let mut idx = 0;
@@ -249,7 +302,7 @@ fn write_stream_str_to_cache(stream_str: String,
     return cache.cache_item(key, bytes);
 }
 
-fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), CacheError> {
+fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), RemError> {
     let mut cache = cache_mtx.lock().unwrap();
     return cache.delete_item(key);
 }
@@ -315,7 +368,7 @@ fn client_exec_read(line: String, mut stream: &mut TcpStream) {
     }
 }
 
-/// Executres a delete operation by parsing the client command and converting it to REM format
+/// Executes a delete operation by parsing the client command and converting it to REM format
 /// ex: delete abc would be converted to 5|D$abc and sent to the REM server
 fn client_exec_delete(line: String, mut stream: &mut TcpStream) {
     let key = String::from(&line["delete ".len()..line.len()]);
@@ -367,6 +420,9 @@ fn main() {
 
     let mut mode: Mode = Mode::NONE;
 
+    // Consume the first argument since it is just the program
+    args.next();
+
     loop {
         match args.next().as_ref() {
             Some(opt) => {
@@ -389,7 +445,13 @@ fn main() {
                             None => break,
                         }
                     }
-                    _ => continue,
+                    _ => {
+                        RemError::with_reason_str_and_details(REM_00002,
+                                                              format!("Argument {} is not a \
+                                                                       valid option",
+                                                                      opt))
+                            .log_and_exit();
+                    }
                 }
             }
             None => break,
@@ -400,6 +462,8 @@ fn main() {
     match mode {
         Mode::CLIENT => launch_client(ip, port),
         Mode::SERVER => launch_server(ip, port),
-        Mode::NONE => panic!("Mode must be specified"),
+        Mode::NONE => {
+            RemError::with_reason_str(REM_00001).log();
+        }
     }
 }
