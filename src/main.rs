@@ -22,7 +22,7 @@ const REM_00001: &'static str = "REM_00001: A run mode must be specified. One of
                                  expected";
 const REM_00002: &'static str = "REM_00002: Unexpected argument encountered";
 const REM_00003: &'static str = "REM_00003: IO operation failed";
-
+const REM_00004: &'static str = "REM_00004: Failed to parse integer value from string";
 
 /// The different run modes for REM
 enum Mode {
@@ -72,19 +72,6 @@ impl RemError {
         self.log();
         std::process::exit(1);
     }
-
-    pub fn print(self) {
-        match self.details {
-            None => print!("{}", self.reason),
-            Some(details) => print!("{}. Details: {}", self.reason, details), 
-        }
-        match io::stdout().flush() {
-            Err(why) => {
-                warn!("Failed to flush standart out. Error '{:?}'", why);
-            }
-            _ => (),
-        }
-    }
 }
 
 impl fmt::Display for RemError {
@@ -96,6 +83,12 @@ impl fmt::Display for RemError {
 impl From<io::Error> for RemError {
     fn from(e: io::Error) -> RemError {
        return RemError::with_reason_str_and_details(REM_00003, String::from(e.description()));
+    }
+}
+
+impl From<std::num::ParseIntError> for RemError {
+     fn from(e: std::num::ParseIntError) -> RemError {
+       return RemError::with_reason_str_and_details(REM_00004, String::from(e.description()));
     }
 }
 
@@ -154,7 +147,7 @@ impl Cache {
     /// If a value for the provided key already exists it will be overwritten
     fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), RemError> {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
-        fs::create_dir("_cache");
+        try!(fs::create_dir("_cache"));
         let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
         try!(f.write(&val.as_slice()));
         try!(f.flush());
@@ -168,8 +161,8 @@ impl Cache {
     ///
     /// If the key cannot be found in the map then an attempt will be made to load the value
     /// from the file corresponding with the key
-    fn read_item(&self, key: String) -> Option<Box<Vec<u8>>> {
-        let mut res: Option<Box<Vec<u8>>>;
+    fn read_item(&self, key: String) -> Result<Option<Box<Vec<u8>>>, RemError> {
+        let res: Option<Box<Vec<u8>>>;
         if self.map_internal.contains_key(&key) {
             let res_opt = self.map_internal.get(&key);
             match res_opt {
@@ -178,15 +171,15 @@ impl Cache {
             }
         } else {
             let mut buf: Vec<u8> = Vec::new();
-            let f_res = match File::open(format!("_cache/{}", key)) {
-                Err(why) => res = None,
+            match File::open(format!("_cache/{}", key)) {
+                Err(..) => res = None,
                 Ok(mut file) => {
-                    file.read_to_end(&mut buf);
+                    try!(file.read_to_end(&mut buf));
                     res = Some(Box::new(buf));
                 }
             };
         }
-        return res;
+        return Ok(res);
     }
 
     /// Delete's an item from the cache
@@ -202,7 +195,7 @@ impl Cache {
         if Path::new(&path).exists() {
             match fs::remove_file(path) {
                 Ok(x) => x,
-                Err(e) => {
+                Err(..) => {
                     return Err(RemError::with_reason(format!("Failed to delete file for key: \
                                                                 {}",
                                                              key)))
@@ -218,11 +211,11 @@ impl Cache {
 /// Allocates a 64 byte buffer which is used to read the input info from the stream
 /// The expected format is ```{size}|{content}```
 /// Ex. ```5|W$a:b```
-fn string_from_stream(stream: &mut TcpStream) -> String {
+fn string_from_stream(stream: &mut TcpStream) -> Result<String, RemError> {
     //Read in the first 54 bytes of the stram
-    stream.set_nodelay(true);
+    try!(stream.set_nodelay(true));
     let mut buf_arr: [u8; 64] = [0; 64];
-    stream.read(&mut buf_arr);
+    try!(stream.read(&mut buf_arr));
     // Parse the message size
     let mut size_str = String::new();
     let mut buf_size: usize = 0;
@@ -235,7 +228,7 @@ fn string_from_stream(stream: &mut TcpStream) -> String {
     }
 
     // Convert the size string to a usize so it can be used to drain the buffer
-    let upper_idx: usize = size_str.parse::<i32>().unwrap() as usize;
+    let upper_idx: usize = try!(size_str.parse::<i32>()) as usize;
     let mut buf_temp: Vec<u8> = buf_arr.to_vec();
     // Create a new buffer using the parsed indicies
     let buf: Vec<u8> = buf_temp.drain(buf_size..upper_idx + buf_size).collect();
@@ -244,11 +237,11 @@ fn string_from_stream(stream: &mut TcpStream) -> String {
 
     // Return the value as a string
     let buf_str: String = String::from_utf8(buf).unwrap();
-    return buf_str;
+    return Ok(buf_str);
 }
 
 fn handle_client(mut stream: &mut TcpStream, cache: &Arc<Mutex<Cache>>) -> Result<(), RemError> {
-    let buf_str: String = string_from_stream(stream);
+    let buf_str: String = try!(string_from_stream(stream));
     if buf_str.len() > 0 {
         let cache_op: CacheOperation = CacheOperation::new_from_string(&buf_str);
 
@@ -275,16 +268,16 @@ fn read_value_from_cache(key: String,
                          mut stream: &mut TcpStream)
                          -> Result<(), RemError> {
     let cache = cache_mtx.lock().unwrap();
-    let cache_opt: Option<Box<Vec<u8>>> = cache.read_item(key);
+    let cache_opt: Option<Box<Vec<u8>>> = try!(cache.read_item(key));
     match cache_opt {
         Some(boxed_val) => {
             let val: Vec<u8> = *boxed_val;
             debug!("Writing to stream {:?}", val);
-            write_str_to_stream_with_size(&mut stream, String::from_utf8(val).unwrap());
+            try!(write_str_to_stream_with_size(&mut stream, String::from_utf8(val).unwrap()));
             return Ok(());
         }
         None => {
-            write_str_to_stream_with_size(&mut stream, String::from("Invalid Key"));
+            try!(write_str_to_stream_with_size(&mut stream, String::from("Invalid Key")));
             return Err(RemError::with_reason(String::from("Could not read from cache")));
         }
     }
@@ -296,7 +289,7 @@ fn write_stream_str_to_cache(stream_str: String,
     let mut key: String = String::new();
     let mut val: String = String::new();
     let mut idx = 0;
-    let mut chars_iter = stream_str.chars();
+    let chars_iter = stream_str.chars();
     for c in chars_iter {
         idx += 1;
         if c == ':' {
@@ -333,11 +326,20 @@ fn launch_client(ip: String, port: String) {
                 for line_res in stdin.lock().lines() {
                     let line: String = line_res.unwrap();
                     if line.starts_with("write ") {
-                        client_exec_write(line, &mut stream);
+                        match client_exec_write(line, &mut stream){
+                            Ok(..) => (),
+                            Err(why) => why.log()
+                        }
                     } else if line.starts_with("read ") {
-                        client_exec_read(line, &mut stream);
+                        match client_exec_read(line, &mut stream){
+                            Ok(..) => (),
+                            Err(why) => why.log()
+                        }
                     } else if line.starts_with("delete ") {
-                        client_exec_delete(line, &mut stream);
+                        match client_exec_delete(line, &mut stream){
+                            Ok(..) => (),
+                            Err(why) => why.log()
+                        }
                     }
                 }
             }
@@ -351,13 +353,13 @@ fn launch_client(ip: String, port: String) {
 
 /// Executres a write operation by parsing the client command and converting it to REM format
 /// ex: write abc:def would be converted to 9|W$abc:def and sent to the REM server
-fn client_exec_write(line: String, mut stream: &mut TcpStream) {
+fn client_exec_write(line: String, mut stream: &mut TcpStream)-> Result<(), RemError> {
     let key_val = String::from(&line["write ".len()..line.len()]);
     let delim_idx = key_val.find(" ").unwrap();
     let key = &key_val[0..delim_idx];
     let val = &key_val[delim_idx + 1..key_val.len()];
     let sized_val = String::from(format!("W${}:{}", key, val));
-    write_str_to_stream_with_size(&mut stream, sized_val);
+    return write_str_to_stream_with_size(&mut stream, sized_val);
 }
 
 /// Executres a read operation by parsing the client command and converting it to REM format
@@ -368,7 +370,7 @@ fn client_exec_read(line: String, mut stream: &mut TcpStream)-> Result<(), RemEr
     let key = String::from(&line["read ".len()..line.len()]);
     let cmd_val = String::from(format!("R${}", key));
     try!(write_str_to_stream_with_size(&mut stream, cmd_val));
-    let val: String = string_from_stream(&mut stream);
+    let val: String = try!(string_from_stream(&mut stream));
     println!("{}", val);
     let flush_res = io::stdout().flush();
     if flush_res.is_err() {
