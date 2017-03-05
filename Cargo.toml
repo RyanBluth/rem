@@ -6,3 +6,4 @@ authors = ["ryann"]
 [dependencies]
 log = "0.3"
 env_logger = "0.3"
+backtrace = "0.3.0"

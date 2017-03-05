@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+extern crate backtrace;
 
 use std::io::prelude::*;
 use std::io;
@@ -17,6 +18,10 @@ use std::env;
 use std::env::Args;
 use std::fmt;
 use std::error::Error;
+use std::mem;
+
+use backtrace::Backtrace;
+
 
 const REM_00001: &'static str = "REM_00001: A run mode must be specified. One of [server, client] \
                                  expected";
@@ -33,50 +38,51 @@ enum Mode {
 
 /// Simple error structure to be used when errors occur during a cache operation
 #[derive(Debug)]
-struct RemError {
-    reason: String,
-    details: Option<String>,
+struct RemError{
+    reason: String
 }
 
 impl RemError {
     pub fn with_reason(reason: String) -> RemError {
         return RemError {
-            reason: reason,
-            details: Option::None,
+            reason: reason
         };
     }
 
     pub fn with_reason_str(reason: &'static str) -> RemError {
         return RemError {
-            reason: String::from(reason),
-            details: Option::None,
+            reason: String::from(reason)
         };
     }
 
     pub fn with_reason_str_and_details(reason: &'static str, details: String) -> RemError {
         return RemError {
-            reason: String::from(reason),
-            details: Some(details),
+            reason: String::from(format!("{}: {}\n{:?}", reason, details, Backtrace::new())) 
         };
     }
 
-
     pub fn log(self) {
-        match self.details {
-            None => error!("{}", self.reason),
-            Some(details) => error!("{}: {}", self.reason, details), 
-        }
+        error!("{}", self);
     }
 
     pub fn log_and_exit(self) {
         self.log();
         std::process::exit(1);
     }
+    
 }
+
+
+impl<'a> Error for RemError {
+    fn description(&self) -> &str {
+        return &self.reason;
+    }
+}
+
 
 impl fmt::Display for RemError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        return write!(formatter, "{}", self.reason);
+        return write!(formatter, "{}", self.description());
     }
 }
 
@@ -91,7 +97,6 @@ impl From<std::num::ParseIntError> for RemError {
        return RemError::with_reason_str_and_details(REM_00004, String::from(e.description()));
     }
 }
-
 
 /// A structure to store a series of cache operations and a value
 /// Cache operations are represented by a single character
@@ -147,7 +152,13 @@ impl Cache {
     /// If a value for the provided key already exists it will be overwritten
     fn cache_item(&mut self, key: String, val: Vec<u8>) -> Result<(), RemError> {
         debug!("Writing to cache: key={:?} val={:?}", key, val);
-        try!(fs::create_dir("_cache"));
+        let dir_res = fs::create_dir("_cache");
+        if dir_res.is_err() {
+            let err_kind = dir_res.unwrap_err().kind();
+            if err_kind == io::ErrorKind::PermissionDenied {
+                return Result::Err(RemError::from(io::Error::from(err_kind)));
+            }
+        }
         let mut f: File = File::create(format!("_cache/{}", key)).unwrap();
         try!(f.write(&val.as_slice()));
         try!(f.flush());
@@ -172,7 +183,7 @@ impl Cache {
         } else {
             let mut buf: Vec<u8> = Vec::new();
             match File::open(format!("_cache/{}", key)) {
-                Err(..) => res = None,
+                Err(_) => res = None,
                 Ok(mut file) => {
                     try!(file.read_to_end(&mut buf));
                     res = Some(Box::new(buf));
@@ -195,7 +206,7 @@ impl Cache {
         if Path::new(&path).exists() {
             match fs::remove_file(path) {
                 Ok(x) => x,
-                Err(..) => {
+                Err(_) => {
                     return Err(RemError::with_reason(format!("Failed to delete file for key: \
                                                                 {}",
                                                              key)))
@@ -315,6 +326,86 @@ fn write_str_to_stream_with_size(stream: &mut TcpStream, value: String) -> Resul
     return Ok(());
 }
 
+
+struct InputParser{
+    args:Vec<String>,
+    current:String,
+    consumed_double_quote:bool,
+    consumed_single_quote:bool
+}
+
+impl InputParser{
+
+    pub fn consume_space(&mut self){
+        if !self.consumed_double_quote && !self.consumed_single_quote {
+            self.push_current();
+        }else{
+            self.current.push(' ');
+        }
+    }
+
+    pub fn consume_double_quote(&mut self){
+        if  !self.consumed_single_quote {
+            if self.consumed_double_quote{
+                self.push_current();
+            }
+            self.consumed_double_quote = !self.consumed_double_quote;
+        }else{
+            self.current.push('"');
+        }
+    }
+
+
+    pub fn consume_single_quote(&mut self){
+         if  !self.consumed_double_quote {
+            if self.consumed_single_quote{
+                self.push_current();
+            }
+            self.consumed_single_quote = !self.consumed_single_quote;
+        }else{
+            self.current.push('\'');
+        }
+    }
+
+
+    pub fn consume_char(&mut self, c:char){
+        self.current.push(c);
+    }
+
+    pub fn end(&mut self){
+        self.push_current();
+    }
+
+    pub fn push_current(&mut self){
+        if self.current.len() > 0 {
+            let arg = mem::replace(&mut self.current, String::new());
+            self.args.push(arg);
+        }
+    }
+
+}
+
+pub fn parse_input(input: String) -> Vec<String>{
+    let mut parser = InputParser{
+        args:Vec::new(),
+        current:String::new(),
+        consumed_double_quote:false,
+        consumed_single_quote:false
+    };    
+    for c in input.chars(){
+        match c {
+            '"'  => parser.consume_double_quote(),
+            ' '  => parser.consume_space(),
+            '\'' => parser.consume_single_quote(), 
+            _    => parser.consume_char(c)
+        }
+    }
+    parser.end();
+
+    return parser.args;
+}
+
+
 fn launch_client(ip: String, port: String) {
     info!("Connection to {}:{}", ip, port);
 
@@ -322,23 +413,44 @@ fn launch_client(ip: String, port: String) {
         Ok(mut stream) => {
             loop {
                 // Contine looping, executing any commands from the user
-                let stdin = io::stdin();
-                for line_res in stdin.lock().lines() {
+                let handle = io::stdin();
+                for line_res in handle.lock().lines() {
                     let line: String = line_res.unwrap();
-                    if line.starts_with("write ") {
-                        match client_exec_write(line, &mut stream){
-                            Ok(..) => (),
-                            Err(why) => why.log()
-                        }
-                    } else if line.starts_with("read ") {
-                        match client_exec_read(line, &mut stream){
-                            Ok(..) => (),
-                            Err(why) => why.log()
-                        }
-                    } else if line.starts_with("delete ") {
-                        match client_exec_delete(line, &mut stream){
-                            Ok(..) => (),
-                            Err(why) => why.log()
+                    let args:Vec<String> = parse_input(line);
+                    if args.len() > 0{
+                        let arg_ref = args[0].as_ref();
+                        match arg_ref {
+                            "write" => {
+                                if args.len() == 3 {
+                                    match client_exec_write(&args[1], &args[2], &mut stream){
+                                        Ok(_) => (),
+                                        Err(why) => why.log()
+                                    }
+                                }else{
+                                    error!("Write expects two arguments - key and value");
+                                }
+                            },
+                            "read" => {
+                                if args.len() == 2 {
+                                    match client_exec_read(&args[1], &mut stream){
+                                        Ok(_) => (),
+                                        Err(why) => why.log()
+                                    }
+                                }else{
+                                    error!("Read expects one argument - key");
+                                }
+                            },
+                            "delete" => {
+                                if args.len() == 2 {
+                                    match client_exec_delete(&args[1], &mut stream){
+                                        Ok(_) => (),
+                                        Err(why) => why.log()
+                                    }
+                                }else{
+                                    error!("Delete expects one argument - key");
+                                }
+                            }
+                            _ => error!("Not a valid command")
                         }
                     }
                 }
@@ -353,11 +465,7 @@ fn launch_client(ip: String, port: String) {
 
 /// Executres a write operation by parsing the client command and converting it to REM format
 /// ex: write abc:def would be converted to 9|W$abc:def and sent to the REM server
-fn client_exec_write(line: String, mut stream: &mut TcpStream)-> Result<(), RemError> {
-    let key_val = String::from(&line["write ".len()..line.len()]);
-    let delim_idx = key_val.find(" ").unwrap();
-    let key = &key_val[0..delim_idx];
-    let val = &key_val[delim_idx + 1..key_val.len()];
+fn client_exec_write(key:&String, val:&String, mut stream: &mut TcpStream)-> Result<(), RemError> {
     let sized_val = String::from(format!("W${}:{}", key, val));
     return write_str_to_stream_with_size(&mut stream, sized_val);
 }
@@ -366,24 +474,18 @@ fn client_exec_write(line: String, mut stream: &mut TcpStream)-> Result<(), RemE
 /// ex: read abc:def would be converted to 5|R$abc and sent to the REM launch_server
 /// The respone from the REM server is writen to stdout
 /// If stdout::flush fail a warning will be logged
-fn client_exec_read(line: String, mut stream: &mut TcpStream)-> Result<(), RemError>{
-    let key = String::from(&line["read ".len()..line.len()]);
+fn client_exec_read(key: &String, mut stream: &mut TcpStream)-> Result<(), RemError>{
     let cmd_val = String::from(format!("R${}", key));
     try!(write_str_to_stream_with_size(&mut stream, cmd_val));
     let val: String = try!(string_from_stream(&mut stream));
     println!("{}", val);
-    let flush_res = io::stdout().flush();
-    if flush_res.is_err() {
-        warn!("Failed to flush standart out. Error '{:?}'",
-              flush_res.err());
-    }
+    try!(io::stdout().flush());
     return Ok(());
 }
 
 /// Executes a delete operation by parsing the client command and converting it to REM format
 /// ex: delete abc would be converted to 5|D$abc and sent to the REM server
-fn client_exec_delete(line: String, mut stream: &mut TcpStream) -> Result<(), RemError>{
-    let key = String::from(&line["delete ".len()..line.len()]);
+fn client_exec_delete(key: &String, mut stream: &mut TcpStream) -> Result<(), RemError>{
     let cmd_val = String::from(format!("D${}", key));
     return write_str_to_stream_with_size(&mut stream, cmd_val);
 }
@@ -409,8 +511,9 @@ fn launch_server(ip: String, port: String) {
                         loop {
                             let client_res = handle_client(&mut stream, &cache);
                             if client_res.is_err() {
-                                error!("An error occured while handling a client connection {:?}",
-                                       client_res.err());
+                                error!("An error occured while handling a client connection: {}",
+                                       client_res.unwrap_err());
+                                break;
                             }
                         }
                     });
