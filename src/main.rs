@@ -336,7 +336,10 @@ struct InputParser{
 
 impl InputParser{
 
+    /// Consumes a space charater taking quotes into consideration
+    /// If the parser has consumed an opening quote then the space will be consumed as a character
     pub fn consume_space(&mut self){
+        // If neither a single quote or a double quote has been consumed then its a new argument
         if !self.consumed_double_quote && !self.consumed_single_quote {
             self.push_current();
         }else{
@@ -344,38 +347,52 @@ impl InputParser{
         }
     }
 
+    /// Consumes a double quote, keeping track of whether it is an opening or cloing quote
+    /// Takes single quotes into account when determening if the double quote is a delimiter or character
     pub fn consume_double_quote(&mut self){
+        // If a single quote hasn't been consumed we're at the end or 
+        // beginning of an argument in double quotes
         if  !self.consumed_single_quote {
             if self.consumed_double_quote{
                 self.push_current();
             }
+            // Flip the value so we know the sate for the next double quote that is consumed
             self.consumed_double_quote = !self.consumed_double_quote;
         }else{
+            // If we're in double quotes just treat the double quote as a regular character 
             self.current.push('"');
         }
     }
 
-
+    /// Consumes a single quote, keeping track of whether it is an opening or cloing quote
+    /// Takes double quotes into account when determening if the single quote is a delimiter or character
     pub fn consume_single_quote(&mut self){
-         if  !self.consumed_double_quote {
+         // If a double quote hasn't been consumed we're at the end or 
+        // beginning of an argument in single quotes
+         if !self.consumed_double_quote {
             if self.consumed_single_quote{
                 self.push_current();
             }
+            // Flip the value so we know the sate for the next single quote that is consumed
             self.consumed_single_quote = !self.consumed_single_quote;
         }else{
+            // If we're in double quotes just treat the single quote as a regular character 
             self.current.push('\'');
         }
     }
 
-
+    /// Adds the character onto the current argument
     pub fn consume_char(&mut self, c:char){
         self.current.push(c);
     }
 
+    /// To be called when everything has been parsed
     pub fn end(&mut self){
         self.push_current();
     }
 
+    /// Pushes the current string into the list of args
+    /// If the length of current is 0 no actions are performed
     pub fn push_current(&mut self){
         if self.current.len() > 0 {
             let arg = mem::replace(&mut self.current, String::new());
@@ -385,6 +402,7 @@ impl InputParser{
 
 }
 
+/// Parses the arguments out of an input string taking quotes and spaces into consideration
 pub fn parse_input(input: String) -> Vec<String>{
     let mut parser = InputParser{
         args:Vec::new(),
