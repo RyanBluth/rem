@@ -5,3 +5,4 @@ pub mod client;
 pub mod error;
 pub mod cache;
 pub mod op;
+pub mod codec;

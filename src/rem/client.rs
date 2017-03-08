@@ -3,7 +3,6 @@ use std::io;
 use std::string::String;
 use std::vec::Vec;
 use std::net::{TcpStream};
-use std::sync::{Mutex};
 use std::mem;
 
 use rem::op;
