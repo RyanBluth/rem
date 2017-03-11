@@ -67,6 +67,15 @@ impl From<io::Error> for RemError {
     }
 }
 
+
+impl From<RemError> for io::Error {
+    fn from(e: RemError) -> io::Error {
+       let err = io::Error::new(io::ErrorKind::Other, e);
+       return err;
+    }
+}
+
+
 impl From<std::num::ParseIntError> for RemError {
      fn from(e: std::num::ParseIntError) -> RemError {
        return RemError::with_reason_str_and_details(REM_00004, String::from(e.description()));

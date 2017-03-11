@@ -1,7 +1,8 @@
 use tokio_proto::pipeline::ServerProto;
 use tokio_core::io::{Io, Framed};
 
-use rem::codec;
+use rem::codec::CacheCodec;
+use std::io;
 
 pub struct CacheProto {}
 
@@ -13,9 +14,9 @@ impl<T: Io + 'static> ServerProto<T> for CacheProto {
     type Response = String;
 
     /// A bit of boilerplate to hook in the codec:
-    type Transport = Framed<T, LineCodec>;
+    type Transport = Framed<T, CacheCodec>;
     type BindTransport = Result<Self::Transport, io::Error>;
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(LineCodec))
+        Ok(io.framed(CacheCodec{}))
     }
 }
