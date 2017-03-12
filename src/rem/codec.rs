@@ -22,7 +22,6 @@ impl Codec for CacheCodec {
                                 let content = buf.drain_to(size as usize);
                                 // TODO - improve and add error handling
                                 let content_string = String::from_utf8(Vec::from(content.as_slice())).unwrap();
-                                error!("Content {}", content_string);
                                 return Ok(Some(content_string));
                             }else {
                                 return Ok(None);

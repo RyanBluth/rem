@@ -8,20 +8,16 @@ use rem::cache::Cache;
 use rem::error::*;
 
 pub fn read_value_from_cache(key: String,
-                         cache_mtx: &Arc<Mutex<Cache>>,
-                         mut stream: &mut TcpStream)
-                         -> Result<(), RemError> {
+                         cache_mtx: &Arc<Mutex<Cache>>)
+                         -> Result<(Vec<u8>), RemError> {
     let cache = cache_mtx.lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = try!(cache.read_item(key));
     match cache_opt {
         Some(boxed_val) => {
             let val: Vec<u8> = *boxed_val;
-            debug!("Writing to stream {:?}", val);
-            try!(write_str_to_stream_with_size(&mut stream, String::from_utf8(val).unwrap()));
-            return Ok(());
+            return Ok(val.clone());
         }
         None => {
-            try!(write_str_to_stream_with_size(&mut stream, String::from("Invalid Key")));
             return Err(RemError::with_reason(String::from("Could not read from cache")));
         }
     }
