@@ -69,7 +69,9 @@ pub fn launch(ip: String, port: String) {
 /// ex: write abc:def would be converted to 9|W$abc:def and sent to the REM server
 fn client_exec_write(key:&String, val:&String, mut stream: &mut TcpStream)-> Result<(), RemError> {
     let sized_val = String::from(format!("W${}:{}", key, val));
-    return op::write_str_to_stream_with_size(&mut stream, sized_val);
+    let res = op::write_str_to_stream_with_size(&mut stream, sized_val);
+    try!(print_response(&mut stream));
+    return res;
 }
 
 /// Executres a read operation by parsing the client command and converting it to REM format
@@ -79,9 +81,7 @@ fn client_exec_write(key:&String, val:&String, mut stream: &mut TcpStream)-> Res
 fn client_exec_read(key: &String, mut stream: &mut TcpStream)-> Result<(), RemError>{
     let cmd_val = String::from(format!("R${}", key));
     try!(op::write_str_to_stream_with_size(&mut stream, cmd_val));
-    let val: String = try!(op::string_from_stream(&mut stream));
-    println!("{}", val);
-    try!(io::stdout().flush());
+    try!(print_response(&mut stream));
     return Ok(());
 }
 
@@ -89,7 +89,16 @@ fn client_exec_read(key: &String, mut stream: &mut TcpStream)-> Result<(), RemEr
 /// ex: delete abc would be converted to 5|D$abc and sent to the REM server
 fn client_exec_delete(key: &String, mut stream: &mut TcpStream) -> Result<(), RemError>{
     let cmd_val = String::from(format!("D${}", key));
-    return op::write_str_to_stream_with_size(&mut stream, cmd_val);
+    let res = op::write_str_to_stream_with_size(&mut stream, cmd_val);
+    try!(print_response(&mut stream));
+    return res;
+}
+
+fn print_response(mut stream: &mut TcpStream) -> Result<(), RemError>{
+    let val: String = try!(op::string_from_stream(&mut stream));
+    println!("{}", val);
+    try!(io::stdout().flush());
+    return Ok(());
 }
 
 struct InputParser{

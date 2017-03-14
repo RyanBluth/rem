@@ -43,8 +43,9 @@ impl CacheOperation {
 
 
 /// Cache object -- Simple wrapper around a map
+#[derive(Debug)]
 pub struct Cache {
-    map_internal: HashMap<String, Vec<u8>>,
+    pub map_internal: HashMap<String, Vec<u8>>,
 }
 
 impl Cache {
