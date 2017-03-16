@@ -1,16 +1,7 @@
-use std::io::prelude::*;
-use std::io;
 use std::string::String;
-use std::net::{TcpListener, TcpStream};
-use std::thread;
 use std::sync::{Arc, Mutex};
 
 use rem::cache::Cache;
-use rem::cache::CacheOperation;
-use rem::error::*;
-use rem::op;
-
-use rem::codec::CacheCodec;
 use rem::service::CacheService;
 use rem::proto::CacheProto;
 

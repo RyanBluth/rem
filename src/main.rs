@@ -14,11 +14,6 @@ use std::env;
 use std::env::Args;
 
 use rem::error::*;
-use rem::codec::CacheCodec;
-use rem::service::CacheService;
-use rem::proto::CacheProto;
-
-use tokio_proto::TcpServer;
 
 /// The different run modes for REM
 enum Mode {
