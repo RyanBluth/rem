@@ -1,4 +1,3 @@
-use std;
 use std::io;
 use std::str;
 use tokio_core::io::{Codec, EasyBuf};

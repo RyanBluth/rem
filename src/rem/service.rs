@@ -18,6 +18,34 @@ pub struct CacheService{
     pub cache: Arc<Mutex<Cache>>
 }
 
+impl CacheService{
+     pub fn process_cache_op(&self, op: CacheOperation) -> Result<String, RemError> {
+        let prim_cmd: char = op.commands[0];
+        match prim_cmd {
+            'W' => {
+                match op::write_stream_str_to_cache(op.value, &self.cache) {
+                    Ok(()) => Ok(String::from(OK)),
+                    Err(cause) => Err(cause)
+                }      
+            },
+            'R' => {
+                match op::read_value_from_cache(op.value, &self.cache){
+                    // Todo handle errors
+                    Ok(res) => Ok(String::from_utf8(res).unwrap()),
+                    Err(cause) => Err(cause)
+                }
+            },
+            'D' => {
+                match op::delete_value_from_cache(op.value, &self.cache) {
+                    Ok(()) => Ok(String::from(OK)),
+                    Err(cause) => Err(cause)
+                } 
+            }
+            _ => Err(RemError::with_reason(format!("Invalid cache command {:?}", prim_cmd))),
+        }
+    }
+}
+
 impl Service for CacheService {
     // These types must match the corresponding protocol types:
     type Request =  String;
@@ -32,26 +60,7 @@ impl Service for CacheService {
     // Produce a future for computing a response from a request.
     fn call(&self, req: Self::Request) -> Self::Future {
         let cache_op = CacheOperation::new_from_string(&req);
-        let prim_cmd: char = cache_op.commands[0];
-        let cache_res:Result<String, RemError> = match prim_cmd {
-            'W' => {
-                // Todo handle errors 
-                op::write_stream_str_to_cache(cache_op.value, &self.cache);
-                Ok(String::from(OK))
-            },
-            'R' => {
-                let result = op::read_value_from_cache(cache_op.value, &self.cache);
-                // Todo handle errors 
-                Ok(String::from_utf8(result.unwrap()).unwrap())
-            },
-            'D' => {
-                // Todo handler errors 
-                op::delete_value_from_cache(cache_op.value, &self.cache);
-                Ok(String::from(OK))
-            }
-            _ => Err(RemError::with_reason(format!("Invalid cache command {:?}", prim_cmd))),
-        };
-
+        let cache_res:Result<String, RemError> = self.process_cache_op(cache_op);
         let ret = match cache_res {
             Ok(res) =>  res,
             Err(cause) =>{

@@ -10,6 +10,7 @@ pub const REM_00001: &'static str = "REM_00001: A run mode must be specified. On
 pub const REM_00002: &'static str = "REM_00002: Unexpected argument encountered";
 pub const REM_00003: &'static str = "REM_00003: IO operation failed";
 pub const REM_00004: &'static str = "REM_00004: Failed to parse integer value from string";
+pub const REM_00005: &'static str = "REM_00005: Invalid key";
 
 /// Simple error structure to be used when errors occur during a cache operation
 #[derive(Debug)]

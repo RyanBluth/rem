@@ -18,7 +18,7 @@ pub fn read_value_from_cache(key: String,
             return Ok(val.clone());
         }
         None => {
-            return Err(RemError::with_reason(String::from("Could not read from cache")));
+            return Err(RemError::with_reason(String::from(REM_00005)));
         }
     }
 }
