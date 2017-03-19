@@ -1,12 +1,13 @@
 use tokio_proto::pipeline::ServerProto;
-use tokio_core::io::{Io, Framed};
+use tokio_io::codec::{Framed};
+use tokio_io::{AsyncRead, AsyncWrite};
 
 use rem::codec::CacheCodec;
 use std::io;
 
 pub struct CacheProto {}
 
-impl<T: Io + 'static> ServerProto<T> for CacheProto {
+impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for CacheProto {
     /// For this protocol style, `Request` matches the codec `In` type
     type Request = String;
 

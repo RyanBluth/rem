@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use rem::cache::Cache;
 use rem::service::CacheService;
 use rem::proto::CacheProto;
-use futures::Future;
 use futures_cpupool::CpuPool;
 
 use tokio_proto::TcpServer;

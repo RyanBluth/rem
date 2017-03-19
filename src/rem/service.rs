@@ -1,4 +1,4 @@
-use futures::{future, Future, BoxFuture};
+use futures::{Future, BoxFuture};
 use tokio_service::Service;
 
 use std::error::Error;
@@ -9,8 +9,6 @@ use rem::cache::Cache;
 use rem::cache::CacheOperation;
 use rem::op;
 use rem::error::RemError;
-
-use std::{thread, time};
 
 use futures_cpupool::CpuPool;
 

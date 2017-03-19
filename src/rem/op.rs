@@ -2,7 +2,7 @@ use std::io::prelude::*;
 use std::string::String;
 use std::vec::Vec;
 use std::net::{TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 
 use rem::cache::Cache;
 use rem::error::*;
