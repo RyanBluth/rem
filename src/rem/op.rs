@@ -8,7 +8,7 @@ use rem::cache::Cache;
 use rem::error::*;
 
 pub fn read_value_from_cache(key: String,
-                         cache_mtx: &Arc<Mutex<Cache>>)
+                         cache_mtx: &Mutex<Cache>)
                          -> Result<(Vec<u8>), RemError> {
     let cache = cache_mtx.lock().unwrap();
     let cache_opt: Option<Box<Vec<u8>>> = try!(cache.read_item(key));
@@ -57,7 +57,7 @@ pub fn string_from_stream(stream: &mut TcpStream) -> Result<String, RemError> {
 }
 
 pub fn write_stream_str_to_cache(stream_str: String,
-                             cache_mtx: &Arc<Mutex<Cache>>)
+                             cache_mtx: &Mutex<Cache>)
                              -> Result<(), RemError> {
     let mut key: String = String::new();
     let mut val: String = String::new();
@@ -76,7 +76,7 @@ pub fn write_stream_str_to_cache(stream_str: String,
     return cache.cache_item(key.as_str(), bytes);
 }
 
-pub fn delete_value_from_cache(key: String, cache_mtx: &Arc<Mutex<Cache>>) -> Result<(), RemError> {
+pub fn delete_value_from_cache(key: String, cache_mtx: &Mutex<Cache>) -> Result<(), RemError> {
     let mut cache = cache_mtx.lock().unwrap();
     return cache.delete_item(key);
 }

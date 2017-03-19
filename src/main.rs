@@ -3,6 +3,7 @@ extern crate log;
 extern crate env_logger;
 extern crate backtrace;
 extern crate futures;
+extern crate futures_cpupool;
 extern crate tokio_core;
 extern crate tokio_proto;
 extern crate tokio_service;

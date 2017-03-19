@@ -1,4 +1,9 @@
 extern crate std;
+extern crate futures;
+extern crate futures_cpupool;
+extern crate tokio_core;
+extern crate tokio_proto;
+extern crate tokio_service;
 
 pub mod server;
 pub mod client;
