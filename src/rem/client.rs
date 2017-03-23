@@ -5,6 +5,8 @@ use std::vec::Vec;
 use std::net::{TcpStream};
 use std::mem;
 
+use native_tls::{TlsConnector, TlsStream};
+
 use rem::op;
 use rem::error::*;
 
@@ -12,7 +14,9 @@ pub fn launch(ip: String, port: String) {
     info!("Connection to {}:{}", ip, port);
 
     match TcpStream::connect(format!("{}:{}", ip, port).as_str()) {
-        Ok(mut stream) => {
+        Ok(mut tcp_stream) => {
+            let connector = TlsConnector::builder().unwrap().build().unwrap();
+            let mut stream = connector.connect(ip.as_str(), tcp_stream).unwrap();
             loop {
                 // Contine looping, executing any commands from the user
                 let handle = io::stdin();
@@ -67,7 +71,7 @@ pub fn launch(ip: String, port: String) {
 
 /// Executres a write operation by parsing the client command and converting it to REM format
 /// ex: write abc:def would be converted to 9|W$abc:def and sent to the REM server
-fn client_exec_write(key:&String, val:&String, mut stream: &mut TcpStream)-> Result<(), RemError> {
+fn client_exec_write(key:&String, val:&String, mut stream: &mut TlsStream<TcpStream>)-> Result<(), RemError> {
     let sized_val = String::from(format!("W${}:{}", key, val));
     let res = op::write_str_to_stream_with_size(&mut stream, sized_val);
     try!(print_response(&mut stream));
@@ -78,7 +82,7 @@ fn client_exec_write(key:&String, val:&String, mut stream: &mut TcpStream)-> Res
 /// ex: read abc:def would be converted to 5|R$abc and sent to the REM launch_server
 /// The respone from the REM server is writen to stdout
 /// If stdout::flush fail a warning will be logged
-fn client_exec_read(key: &String, mut stream: &mut TcpStream)-> Result<(), RemError>{
+fn client_exec_read(key: &String, mut stream: &mut TlsStream<TcpStream>)-> Result<(), RemError>{
     let cmd_val = String::from(format!("R${}", key));
     try!(op::write_str_to_stream_with_size(&mut stream, cmd_val));
     try!(print_response(&mut stream));
@@ -87,14 +91,14 @@ fn client_exec_read(key: &String, mut stream: &mut TcpStream)-> Result<(), RemEr
 
 /// Executes a delete operation by parsing the client command and converting it to REM format
 /// ex: delete abc would be converted to 5|D$abc and sent to the REM server
-fn client_exec_delete(key: &String, mut stream: &mut TcpStream) -> Result<(), RemError>{
+fn client_exec_delete(key: &String, mut stream: &mut TlsStream<TcpStream>) -> Result<(), RemError>{
     let cmd_val = String::from(format!("D${}", key));
     let res = op::write_str_to_stream_with_size(&mut stream, cmd_val);
     try!(print_response(&mut stream));
     return res;
 }
 
-fn print_response(mut stream: &mut TcpStream) -> Result<(), RemError>{
+fn print_response(mut stream: &mut TlsStream<TcpStream>) -> Result<(), RemError>{
     let val: String = try!(op::string_from_stream(&mut stream));
     println!("{}", val);
     try!(io::stdout().flush());

@@ -4,8 +4,11 @@ use std::vec::Vec;
 use std::net::{TcpStream};
 use std::sync::{Mutex};
 
+use native_tls::{TlsConnector, TlsStream};
+
 use rem::cache::Cache;
 use rem::error::*;
+
 
 pub fn read_value_from_cache(key: String,
                          cache_mtx: &Mutex<Cache>)
@@ -27,9 +30,9 @@ pub fn read_value_from_cache(key: String,
 /// Allocates a 64 byte buffer which is used to read the input info from the stream
 /// The expected format is ```{size}|{content}```
 /// Ex. ```5|W$a:b```
-pub fn string_from_stream(stream: &mut TcpStream) -> Result<String, RemError> {
+pub fn string_from_stream(stream: &mut TlsStream<TcpStream>) -> Result<String, RemError> {
     //Read in the first 54 bytes of the stram
-    try!(stream.set_nodelay(true));
+    //try!(stream.set_nodelay(true));
     let mut buf_arr: [u8; 64] = [0; 64];
     try!(stream.read(&mut buf_arr));
     // Parse the message size
@@ -81,7 +84,7 @@ pub fn delete_value_from_cache(key: String, cache_mtx: &Mutex<Cache>) -> Result<
     return cache.delete_item(key);
 }
 
-pub fn write_str_to_stream_with_size(stream: &mut TcpStream, value: String) -> Result<(), RemError> {
+pub fn write_str_to_stream_with_size(stream: &mut TlsStream<TcpStream>, value: String) -> Result<(), RemError> {
     let sized_val = String::from(format!("{}|{}", value.len(), value));
     try!(stream.write(String::from(sized_val).as_bytes()));
     try!(stream.flush());
