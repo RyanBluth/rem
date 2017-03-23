@@ -1,9 +1,8 @@
 use tokio_proto::pipeline::ServerProto;
 use tokio_io::codec::{Framed};
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_tls::{TlsConnectorExt, TlsAcceptorExt};
+use tokio_tls::{TlsAcceptorExt};
 use rem::codec::CacheCodec;
-use native_tls::TlsAcceptor;
 use std::io;
 
 pub struct CacheProto {}

@@ -1,0 +1,1 @@
+cp -R ./localhost.pfx target/$1/

@@ -2,6 +2,7 @@
 name = "rem"
 version = "0.1.0"
 authors = ["ryann"]
+build = "build.rs"
 
 [dependencies]
 log = "0.3"
@@ -15,4 +16,4 @@ tokio-proto = "0.1"
 tokio-io = "0.1"
 bytes = "0.4"
 native-tls = "0.1"
-tokio-tls = "0.1"
+tokio-tls = { version = "0.1", features = ["tokio-proto"] }
