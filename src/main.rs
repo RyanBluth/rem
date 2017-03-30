@@ -33,7 +33,7 @@ fn main() {
     let mut args: Args = env::args();
 
     // Set default values for arguments
-    let mut ip: String = String::from("0.0.0.0");
+    let mut ip: String = String::from("127.0.0.1");
     let mut port: String = String::from("8080");
 
     let mut mode: Mode = Mode::NONE;

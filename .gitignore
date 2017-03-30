@@ -16,3 +16,7 @@ Cargo.lock
 /_cache/
 
 .vscode/
+
+*.crt
+*.key
+*.pfx
