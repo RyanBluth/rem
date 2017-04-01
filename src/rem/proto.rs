@@ -1,7 +1,6 @@
 use tokio_proto::pipeline::ServerProto;
 use tokio_io::codec::{Framed};
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_tls::{TlsAcceptorExt};
 use rem::codec::CacheCodec;
 use std::io;
 

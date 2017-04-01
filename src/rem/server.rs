@@ -7,7 +7,6 @@ use rem::proto::CacheProto;
 
 use futures_cpupool::CpuPool;
 
-use tokio_tls::{TlsAcceptorExt};
 use native_tls::{Pkcs12, TlsAcceptor};
 
 use tokio_tls::proto::Server;

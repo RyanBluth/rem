@@ -4,7 +4,7 @@ use std::vec::Vec;
 use std::net::{TcpStream};
 use std::sync::{Mutex};
 
-use native_tls::{TlsConnector, TlsStream};
+use native_tls::{TlsStream};
 
 use rem::cache::Cache;
 use rem::error::*;
