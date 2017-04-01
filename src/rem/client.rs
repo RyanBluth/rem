@@ -13,10 +13,10 @@ use rem::error::*;
 pub fn launch(ip: String, port: String) {
     info!("Connection to {}:{}", ip, port);
 
-    match TcpStream::connect(format!("remdev:{}", port).as_str()) {
+    match TcpStream::connect(format!("rem:{}", port).as_str()) {
         Ok(mut tcp_stream) => {
             let connector = TlsConnector::builder().unwrap().build().unwrap();
-            let mut stream = connector.connect(ip.as_str(), tcp_stream).unwrap();
+            let mut stream = connector.connect("rem", tcp_stream).unwrap();
             loop {
                 // Contine looping, executing any commands from the user
                 let handle = io::stdin();

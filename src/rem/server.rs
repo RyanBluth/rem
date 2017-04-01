@@ -42,7 +42,7 @@ pub fn launch(ip: String, port: String) {
 }
 
 fn get_pkcs12() -> Pkcs12{
-    let mut file = File::open("localhost.pfx").unwrap();
+    let mut file = File::open("rem.pfx").unwrap();
     let mut pkcs12 = vec![];
     file.read_to_end(&mut pkcs12).unwrap();
     let pkcs12 = Pkcs12::from_der(&pkcs12, "password").unwrap();
