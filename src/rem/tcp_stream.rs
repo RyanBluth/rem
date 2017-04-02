@@ -17,7 +17,7 @@ pub struct TcpStream{
 
 /// Wraps std::net::TcpStream and native_tls::TcpStream
 /// This allows for one Tcp interface which supports TLS and regular TCP
-impl TcpStream where {
+impl TcpStream {
 
     pub fn connect<A: ToSocketAddrs>(config: &Config, addr: A) -> Result<TcpStream, RemError> {
         let tcp_stream = try!(net::TcpStream::connect(addr));
