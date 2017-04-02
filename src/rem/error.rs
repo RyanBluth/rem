@@ -2,6 +2,7 @@ use std;
 use std::io;
 use std::fmt;
 use std::error::Error;
+use native_tls;
 
 use backtrace::Backtrace;
 
@@ -11,6 +12,7 @@ pub const REM_00002: &'static str = "REM_00002: Unexpected argument encountered"
 pub const REM_00003: &'static str = "REM_00003: IO operation failed";
 pub const REM_00004: &'static str = "REM_00004: Failed to parse integer value from string";
 pub const REM_00005: &'static str = "REM_00005: Invalid key";
+pub const REM_00006: &'static str = "REM_00006: TLS Error";
 
 /// Simple error structure to be used when errors occur during a cache operation
 #[derive(Debug)]
@@ -82,3 +84,18 @@ impl From<std::num::ParseIntError> for RemError {
        return RemError::with_reason_str_and_details(REM_00004, String::from(e.description()));
     }
 }
+
+
+impl From<native_tls::Error> for RemError{
+    fn from(e: native_tls::Error) -> RemError {
+       return RemError::with_reason_str_and_details(REM_00006, String::from(e.description()));
+    }
+}
+
+
+impl<S> From<native_tls::HandshakeError<S>> for RemError{
+    fn from( _ : native_tls::HandshakeError<S>) -> RemError {
+       return RemError::with_reason_str_and_details(REM_00006, String::from("Handshake failed"));
+    }
+}
+

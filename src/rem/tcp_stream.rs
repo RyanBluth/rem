@@ -3,31 +3,33 @@ use std::io;
 use rem::config::Config;
 use std::net;
 use std::net::ToSocketAddrs;
+use rem::error::RemError;
 
-use native_tls::{TlsConnector, TlsStream};
+use native_tls::{TlsConnector};
 
 trait ReadWrite : Read + Write {}
 
 impl<T: Read + Write> ReadWrite for T {}
 
 pub struct TcpStream{
-    io_delegate : Box<ReadWrite>,
-    config: Config
+    io_delegate : Box<ReadWrite>
 }
 
+/// Wraps std::net::TcpStream and native_tls::TcpStream
+/// This allows for one Tcp interface which supports TLS and regular TCP
 impl TcpStream where {
 
-    pub fn connect<A: ToSocketAddrs>(config: Config, addr: A) -> io::Result<TcpStream> {
-        let tcp_stream = net::TcpStream::connect(addr).unwrap();
+    pub fn connect<A: ToSocketAddrs>(config: &Config, addr: A) -> Result<TcpStream, RemError> {
+        let tcp_stream = try!(net::TcpStream::connect(addr));
         if config.ssl {
-            let tls_stream = TlsConnector::builder().unwrap().build().unwrap().connect("rem", tcp_stream).unwrap();
+            let tls_builder   = try!(TlsConnector::builder());
+            let tls_connector = try!(tls_builder.build());
+            let tls_stream    = try!(tls_connector.connect("rem", tcp_stream));
             return Ok(TcpStream {
-                config: config,
                 io_delegate: Box::new(tls_stream)
             });
         }
         return Ok(TcpStream{
-                config: config,
                 io_delegate:Box::new(tcp_stream)
         });
     }

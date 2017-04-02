@@ -7,8 +7,6 @@ use std::mem;
 use rem::tcp_stream::TcpStream;
 use rem::config::Config;
 
-use native_tls::{TlsConnector, TlsStream};
-
 use rem::op;
 use rem::error::*;
 
@@ -17,7 +15,7 @@ pub fn launch(ip: String, port: String) {
     let config = Config{
         ssl: false
     };
-    match TcpStream::connect(config, format!("rem:{}", port).as_str()) {
+    match TcpStream::connect(&config, format!("rem:{}", port).as_str()) {
         Ok(mut stream) => {
             loop {
                 // Continue looping, executing any commands from the user
