@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use rem::cache::Cache;
 use rem::service::CacheService;
 use rem::proto::CacheProto;
+use rem::config::Config;
 
 use futures_cpupool::CpuPool;
 
@@ -15,11 +16,11 @@ use tokio_proto::TcpServer;
 use std::fs::File;
 use std::io::{Read};
 
-pub fn launch(ip: String, port: String) {
+pub fn launch(config: Config, ip: String, port: String) {
    // Specify the localhost address
     let addr = format!("{}:{}", ip, port).parse().unwrap();
 
-    let pkcs12 = get_pkcs12();
+    let pkcs12 = get_pkcs12(&config.server.cert_file, &config.server.cert_password);
     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
 
     let proto = Server::new(CacheProto{}, acceptor);
@@ -40,11 +41,11 @@ pub fn launch(ip: String, port: String) {
     server.serve( move || Ok(cache_service.clone()));
 }
 
-fn get_pkcs12() -> Pkcs12{
-    let mut file = File::open("rem.pfx").unwrap();
+fn get_pkcs12(cert:&String, password:&String) -> Pkcs12{
+    let mut file = File::open(cert).unwrap();
     let mut pkcs12 = vec![];
     file.read_to_end(&mut pkcs12).unwrap();
-    let pkcs12 = Pkcs12::from_der(&pkcs12, "password").unwrap();
+    let pkcs12 = Pkcs12::from_der(&pkcs12, password).unwrap();
     return pkcs12;
 }
 

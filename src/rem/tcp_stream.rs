@@ -24,7 +24,7 @@ impl TcpStream {
         if config.ssl {
             let tls_builder   = try!(TlsConnector::builder());
             let tls_connector = try!(tls_builder.build());
-            let tls_stream    = try!(tls_connector.connect("rem", tcp_stream));
+            let tls_stream    = try!(tls_connector.connect(config.domain.as_str(), tcp_stream));
             return Ok(TcpStream {
                 io_delegate: Box::new(tls_stream)
             });

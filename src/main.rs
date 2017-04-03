@@ -1,5 +1,9 @@
 #[macro_use]
+extern crate serde_derive;
+
+#[macro_use]
 extern crate log;
+
 extern crate env_logger;
 extern crate backtrace;
 extern crate futures;
@@ -11,6 +15,7 @@ extern crate tokio_io;
 extern crate bytes;
 extern crate native_tls;
 extern crate tokio_tls;
+extern crate toml;
 
 mod rem;
 
@@ -19,6 +24,7 @@ use std::env;
 use std::env::Args;
 
 use rem::error::*;
+use rem::config::Config;
 
 /// The different run modes for REM
 enum Mode {
@@ -35,6 +41,7 @@ fn main() {
     // Set default values for arguments
     let mut ip: String = String::from("127.0.0.1");
     let mut port: String = String::from("8080");
+    let mut config_file: String = String::from("rem.toml");
 
     let mut mode: Mode = Mode::NONE;
 
@@ -63,6 +70,12 @@ fn main() {
                             None => break,
                         }
                     }
+                    "-config" =>{
+                        match args.next() {
+                            Some(x) => config_file = x,
+                            None => break,
+                        }
+                    }
                     _ => {
                         RemError::with_reason_str_and_details(REM_00002,
                                                               format!("Argument {} is not a \
@@ -76,10 +89,12 @@ fn main() {
         }
     }
 
+    // Todo handle errors
+    let config: Config = Config::from_file(config_file).unwrap();
 
     match mode {
-        Mode::CLIENT => rem::client::launch(ip, port),
-        Mode::SERVER => rem::server::launch(ip, port),
+        Mode::CLIENT => rem::client::launch(config, ip, port),
+        Mode::SERVER => rem::server::launch(config, ip, port),
         Mode::NONE => {
             RemError::with_reason_str(REM_00001).log();
         }

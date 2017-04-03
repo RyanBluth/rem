@@ -10,12 +10,8 @@ use rem::config::Config;
 use rem::op;
 use rem::error::*;
 
-pub fn launch(ip: String, port: String) {
-    info!("Connection to {}:{}", ip, port);
-    let config = Config{
-        ssl: false
-    };
-    match TcpStream::connect(&config, format!("rem:{}", port).as_str()) {
+pub fn launch(config: Config, ip: String, port: String) {
+    match TcpStream::connect(&config, format!("{}:{}", ip, port).as_str()) {
         Ok(mut stream) => {
             loop {
                 // Continue looping, executing any commands from the user
